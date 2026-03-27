@@ -6,8 +6,12 @@ readme = "README.md"
 authors = [
     { name = "Emiliano Salinas", email = "esalinasbio@gmail.com" }
 ]
-requires-python = ">=3.12"
-dependencies = []
+requires-python = ">=3.10"
+dependencies = [
+    "mdtraj>=1.10.3",
+    "natsort>=8.4.0",
+    "netcdf4>=1.7.3",
+]
 
 [project.scripts]
 statescape = "statescape:main"
@@ -15,3 +19,8 @@ statescape = "statescape:main"
 [build-system]
 requires = ["uv_build>=0.9.27,<0.10.0"]
 build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "ipykernel>=7.2.0",
+]

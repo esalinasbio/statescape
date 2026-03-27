@@ -1,51 +1,61 @@
 from __future__ import annotations
 
-import glob
-from natsort import natsorted
+import numpy as np
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Mapping, Any, Tuple, Sequence
+from typing import Callable, Tuple, Sequence
+
+from natsort import natsorted
 
 
 @dataclass(frozen=True)
 class ConformerRef:
-    '''
+    """
     A reference to a single protein conformation.
 
     This object does not contain the conformational data itself, but rather a reference to it.
     It only describes where and how to retrieve the conformational data.
-    '''
+    """
+
     path: Path
     frame: int | None = None
     topology: Path | None = None
-    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __repr__(self) -> str:
+        if self.frame is not None:
+            return f"ConformerRef({self.path.name}, frame={self.frame})"
+        else:
+            return f"ConformerRef({self.path.name})"
 
 
 @dataclass(frozen=True)
 class ConformerSet:
-    '''
+    """
     Immutable collection of protein conformations.
 
     This object represents a logical dataset of conformers that may
     originate from different sources (e.g. PDB files, trajectory frames, etc.).
-    '''
+    """
+
     conformers: Tuple[ConformerRef, ...]
-    metadata: Mapping[str, Any] = field(default_factory=dict)
-    parent: ConformerSet | None = None
+    reference: Path | None = None
+    _is_folder: bool | None = None
 
     @classmethod
     def from_pdb_files(
         cls,
         pdb_files: Sequence[str | Path],
         *,
-        metadata: Mapping[str, Any] | None = None,
-        parent: ConformerSet | None = None,
+        reference: str | Path | None = None,
         strict: bool = True,
+        _is_folder: bool = False,
     ) -> ConformerSet:
         """
         Build a ConformerSet from a list of PDB file paths.
 
         If `strict=True`, missing paths raise `FileNotFoundError`.
+        Optionally provide a `reference` PDB path for alignment or comparison.
         """
         conformers: list[ConformerRef] = []
         for p in pdb_files:
@@ -54,10 +64,14 @@ class ConformerSet:
                 raise FileNotFoundError(path)
             conformers.append(ConformerRef(path=path))
 
+        ref_path: Path | None = Path(reference) if reference is not None else None
+        if ref_path is not None and strict and not ref_path.exists():
+            raise FileNotFoundError(ref_path)
+
         return cls(
             conformers=tuple(conformers),
-            metadata=dict(metadata or {}),
-            parent=parent,
+            reference=ref_path,
+            _is_folder=_is_folder,
         )
 
     @classmethod
@@ -66,15 +80,16 @@ class ConformerSet:
         folder: str | Path,
         *,
         recursive: bool = False,
-        metadata: Mapping[str, Any] | None = None,
-        parent: ConformerSet | None = None,
+        reference: str | Path | None = None,
         strict: bool = True,
+        _is_folder: bool = True,
     ) -> ConformerSet:
         """
         Build a ConformerSet from a folder containing PDB files.
 
         If `recursive=True`, scans subfolders. Files are sorted by path.
         If `strict=True`, an empty result raises `FileNotFoundError`.
+        Optionally provide a `reference` PDB path for alignment or comparison.
         """
         folder_path = Path(folder)
         if not folder_path.exists():
@@ -88,7 +103,7 @@ class ConformerSet:
         if strict and not pdbs:
             raise FileNotFoundError(f"No .pdb files found in {folder_path}")
 
-        return cls.from_pdb_files(pdbs, metadata=metadata, parent=parent, strict=strict)
+        return cls.from_pdb_files(pdbs, reference=reference, strict=strict, _is_folder=True)
 
     @classmethod
     def from_trajectory(
@@ -101,8 +116,8 @@ class ConformerSet:
         start: int = 0,
         stop: int | None = None,
         stride: int = 1,
-        metadata: Mapping[str, Any] | None = None,
-        parent: ConformerSet | None = None,
+        reference: str | Path | None = None,
+        _is_folder: bool = False,
     ) -> ConformerSet:
         """
         Build a ConformerSet from a trajectory (e.g. XTC) by creating one ConformerRef per frame.
@@ -155,10 +170,12 @@ class ConformerSet:
             ConformerRef(path=traj_path, frame=i, topology=topo_path)
             for i in frame_indices
         )
+        ref_path: Path | None = Path(reference) if reference is not None else None
+        if ref_path is not None and not ref_path.exists():
+            raise FileNotFoundError(ref_path)
         return cls(
             conformers=conformers,
-            metadata=dict(metadata or {}),
-            parent=parent,
+            reference=ref_path,
         )
 
     @classmethod
@@ -171,9 +188,9 @@ class ConformerSet:
         topology: str | Path | None = None,
         recursive: bool = False,
         stride: int = 1,
-        metadata: Mapping[str, Any] | None = None,
-        parent: ConformerSet | None = None,
+        reference: str | Path | None = None,
         strict: bool = True,
+        _is_folder: bool = False,
     ) -> ConformerSet:
         """
         Unified constructor for common conformer sources.
@@ -183,6 +200,8 @@ class ConformerSet:
         - A folder of PDB files: pass `folder="path/to/dir"`
         - A trajectory + topology (e.g. XTC + PDB): pass `trajectory=...`, `topology=...`
 
+        Optionally provide a `reference` PDB path for alignment or comparison (all sources).
+
         Notes
         -----
         - For the trajectory case, this method uses mdtraj to count frames
@@ -190,11 +209,14 @@ class ConformerSet:
           a ConformerSet via `from_trajectory`. This intentionally introduces
           an optional dependency on mdtraj for a better UX, as requested.
         """
+        
         sources = [
             pdb_files is not None,
             folder is not None,
             trajectory is not None,
         ]
+
+        # check that exactly one source is provided
         if sum(int(s) for s in sources) != 1:
             raise ValueError(
                 "Specify exactly one of `pdb_files`, `folder`, or `trajectory`."
@@ -203,8 +225,7 @@ class ConformerSet:
         if pdb_files is not None:
             return cls.from_pdb_files(
                 pdb_files=pdb_files,
-                metadata=metadata,
-                parent=parent,
+                reference=reference,
                 strict=strict,
             )
 
@@ -212,9 +233,9 @@ class ConformerSet:
             return cls.from_folder(
                 folder=folder,
                 recursive=recursive,
-                metadata=metadata,
-                parent=parent,
+                reference=reference,
                 strict=strict,
+                _is_folder=True,
             )
 
         # Trajectory + topology
@@ -227,43 +248,25 @@ class ConformerSet:
             raise ValueError("stride must be >= 1")
 
         n_frames_total = _count_trajectory_frames_mdtraj(traj_path, topo_path)
-        merged_meta = dict(metadata or {})
-        merged_meta.setdefault("n_frames_total", n_frames_total)
 
         return cls.from_trajectory(
             trajectory=traj_path,
             topology=topo_path,
             n_frames=n_frames_total,
             stride=stride,
-            metadata=merged_meta,
-            parent=parent,
+            reference=reference,
         )
-
-    def __len__(self) -> int:
-        return len(self.conformers)
-
-    def __iter__(self):
-        return iter(self.conformers)
-
-    def __getitem__(self, index: int) -> ConformerRef:
-        return self.conformers[index]
-
-    def __contains__(self, item: ConformerRef) -> bool:
-        return item in self.conformers
 
     def subset(self, indices: Sequence[int]) -> ConformerSet:
         """
         Return a new ConformerSet with conformers at the given indices.
 
-        This is a cheap view: it reuses existing ConformerRef instances
-        and sets this ConformerSet as the parent of the result.
+        This is a cheap view: it reuses existing ConformerRef instances.
         """
         if not indices:
             return ConformerSet(
                 conformers=tuple(),
-                metadata=dict(self.metadata),
-                parent=self,
-                provenance=self.provenance,
+                reference=self.reference,
             )
 
         n = len(self.conformers)
@@ -275,9 +278,7 @@ class ConformerSet:
         new_conformers = tuple(self.conformers[i] for i in idx_list)
         return ConformerSet(
             conformers=new_conformers,
-            metadata=dict(self.metadata),
-            parent=self,
-            provenance=self.provenance,
+            reference=self.reference,
         )
 
     def split_by_indices(self, indices: Sequence[int]) -> Tuple[ConformerSet, ConformerSet]:
@@ -303,15 +304,11 @@ class ConformerSet:
 
         kept_set = ConformerSet(
             conformers=tuple(kept),
-            metadata=dict(self.metadata),
-            parent=self,
-            provenance=self.provenance,
+            reference=self.reference,
         )
         dropped_set = ConformerSet(
             conformers=tuple(dropped),
-            metadata=dict(self.metadata),
-            parent=self,
-            provenance=self.provenance,
+            reference=self.reference,
         )
         return kept_set, dropped_set
 
@@ -337,25 +334,54 @@ class ConformerSet:
 
         kept_set = ConformerSet(
             conformers=tuple(kept),
-            metadata=dict(self.metadata),
-            parent=self,
-            provenance=self.provenance,
+            reference=self.reference,
         )
         dropped_set = ConformerSet(
             conformers=tuple(dropped),
-            metadata=dict(self.metadata),
-            parent=self,
-            provenance=self.provenance,
+            reference=self.reference,
         )
         return kept_set, dropped_set
+
+    def filter(self, fn: Callable[[int], bool]) -> ConformerSet:
+        """
+        Return a subset selected by an index predicate.
+
+        The predicate receives each conformer index and must return a boolean.
+        """
+        indices = [i for i in range(len(self.conformers)) if fn(i)]
+        return self.subset(indices)
+
+    def filter_mask(self, mask: Sequence[bool]) -> ConformerSet:
+        """
+        Return a subset selected by a boolean mask.
+
+        The mask must have the same length as this ConformerSet.
+        """
+        if len(mask) != len(self.conformers):
+            raise ValueError(
+                f"Mask length ({len(mask)}) must match number of conformers ({len(self.conformers)})."
+            )
+        indices = [i for i, keep in enumerate(mask) if keep]
+        return self.subset(indices)
+
+    def groupby_source(self) -> dict[tuple[Path, Path | None], list[ConformerRef]]:
+        """
+        Group conformers by source (path, topology), preserving insertion order.
+        """
+        groups: dict[tuple[Path, Path | None], list[ConformerRef]] = {}
+        for ref in self.conformers:
+            key = (ref.path, ref.topology)
+            if key not in groups:
+                groups[key] = []
+            groups[key].append(ref)
+        return groups
 
     @classmethod
     def merge(
         cls,
         sets: Sequence[ConformerSet],
         *,
-        metadata: Mapping[str, Any] | None = None,
-        parent: ConformerSet | None = None,
+        reference: str | Path | None = None,
         allow_duplicates: bool = True,
     ) -> ConformerSet:
         """
@@ -364,6 +390,7 @@ class ConformerSet:
         By default this concatenates conformers from all input sets.
         If `allow_duplicates` is False, duplicate ConformerRef objects
         (by value) are removed while preserving order.
+        If `reference` is not provided, the reference from the first set is used (if any).
         """
         all_conformers: list[ConformerRef] = []
         for s in sets:
@@ -378,12 +405,130 @@ class ConformerSet:
                     unique.append(ref)
             all_conformers = unique
 
-        merged_metadata = dict(metadata or {})
+        ref_path: Path | None = Path(reference) if reference is not None else None
+        if ref_path is None and sets:
+            ref_path = sets[0].reference
         return cls(
             conformers=tuple(all_conformers),
-            metadata=merged_metadata,
-            parent=parent,
+            reference=ref_path,
         )
+
+    def to_pdb(self, output_dir: Path) -> None:
+        """
+        Export each conformer as a PDB file in `output_dir`.
+
+        - Static conformers (`frame is None`) are copied with their original filename.
+        - Trajectory conformers (`frame is not None`) are saved as `<basename>_<frame>.pdb`
+          where <basename> comes from the trajectory file name (no extension).
+        - Output files will not be overwritten: if a filename would be repeated, append a numeric suffix.
+        - Output order matches the original conformer order in `self.conformers`.
+        - Efficient: trajectory sources are loaded at most once each.
+        - Raises ValueError if any trajectory conformer lacks a topology.
+        """
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        filename_counts: dict[str, int] = {}
+        traj_loaded = {}
+
+        for ref in self.conformers:
+            if ref.frame is None:
+                out_name = ref.path.name
+                #name_no_ext = out_name.rsplit('.', 1)[0]
+                count = filename_counts.get(out_name, 0)
+                if count == 0:
+                    out_final = out_name
+                else:
+                    if '.' in out_name:
+                        base, ext = out_name.rsplit('.', 1)
+                        out_final = f"{base}_{count}.{ext}"
+                    else:
+                        out_final = f"{out_name}_{count}"
+                filename_counts[out_name] = count + 1
+
+                out_path = output_dir / out_final
+                shutil.copy2(ref.path, out_path)
+            else:
+                # Trajectory frame. Name: <traj_basename>_<frame>.pdb
+                if ref.topology is None:
+                    raise ValueError(
+                        f"ConformerRef with trajectory source {ref.path} (frame {ref.frame}) is missing a topology."
+                    )
+                traj_path = ref.path
+                topo_path = ref.topology
+                traj_key = (traj_path, topo_path)
+                # Trajectory IO: load only once per (src, topo)
+                if traj_key not in traj_loaded:
+                    try:
+                        import mdtraj as md  # type: ignore
+                    except ImportError as e:  # pragma: no cover - import error path
+                        msg = (
+                            "mdtraj is required to export trajectory frames to PDB. "
+                            "Install it with `pip install mdtraj`."
+                        )
+                        raise ImportError(msg) from e
+                    traj_loaded[traj_key] = md.load(str(traj_path), top=str(topo_path))
+                traj = traj_loaded[traj_key]
+
+                frame_idx = ref.frame
+                traj_basename = traj_path.stem
+                out_name = f"{traj_basename}_{frame_idx}.pdb"
+
+                count = filename_counts.get(out_name, 0)
+                if count == 0:
+                    out_final = out_name
+                else:
+                    # Insert suffix before .pdb
+                    if out_name.endswith('.pdb'):
+                        prefix = out_name[:-4]
+                        out_final = f"{prefix}_{count}.pdb"
+                    else:
+                        out_final = f"{out_name}_{count}"
+                filename_counts[out_name] = count + 1
+
+                out_path = output_dir / out_final
+
+                # Export only the requested frame (keep as single-frame)
+                traj[frame_idx].save_pdb(str(out_path))
+        return
+
+    def __repr__(self) -> str:
+        n = len(self.conformers)
+        if n == 0:
+            return "ConformerSet(n=0)"
+        # Count unique sources
+        sources = len({(r.path, r.topology) for r in self.conformers})
+        # Detect types
+        has_traj = any(r.frame is not None for r in self.conformers)
+        has_pdb = any(r.frame is None for r in self.conformers)
+        types = []
+        if has_traj:
+            types.append("trajectory")
+        if has_pdb:
+            types.append("pdb")
+        path = {str(self.conformers[0].path.parent)}
+        ref = self.reference.name if self.reference is not None else None
+        return (
+            f"ConformerSet("
+            f"n={n}, "
+            f"sources={sources}, "
+            f"type={types}, "
+            f"path={path}, "
+            f"reference={ref}"
+            f")"
+        )
+
+    def __len__(self) -> int:
+        return len(self.conformers)
+
+    def __iter__(self):
+        return iter(self.conformers)
+
+    def __getitem__(self, index: int) -> ConformerRef:
+        return self.conformers[index]
+
+    def __contains__(self, item: ConformerRef) -> bool:
+        return item in self.conformers
 
 
 def _count_trajectory_frames_mdtraj(trajectory: Path, topology: Path) -> int:
