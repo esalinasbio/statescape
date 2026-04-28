@@ -4,7 +4,7 @@ import numpy as np
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Tuple, Sequence
+from typing import Callable, Tuple, Sequence, Any
 
 from natsort import natsorted
 
@@ -41,6 +41,27 @@ class ConformerSet:
     conformers: Tuple[ConformerRef, ...]
     reference: Path | None = None
     _is_folder: bool | None = None
+    load_in_memory: bool = True
+    _in_memory_conformations: tuple[Any, ...] | None = field(
+        default=None,
+        init=False,
+        repr=False,
+        compare=False,
+    )
+    _trajectory_cache: dict[tuple[Path, Path], Any] = field(
+        default_factory=dict,
+        init=False,
+        repr=False,
+        compare=False,
+    )
+
+    def __post_init__(self) -> None:
+        if self.load_in_memory and self._in_memory_conformations is None:
+            object.__setattr__(
+                self,
+                "_in_memory_conformations",
+                tuple(self._load_conformation(ref) for ref in self.conformers),
+            )
 
     @classmethod
     def from_pdb_files(
@@ -50,6 +71,7 @@ class ConformerSet:
         reference: str | Path | None = None,
         strict: bool = True,
         _is_folder: bool = False,
+        load_in_memory: bool = True,
     ) -> ConformerSet:
         """
         Build a ConformerSet from a list of PDB file paths.
@@ -72,6 +94,7 @@ class ConformerSet:
             conformers=tuple(conformers),
             reference=ref_path,
             _is_folder=_is_folder,
+            load_in_memory=load_in_memory,
         )
 
     @classmethod
@@ -83,6 +106,7 @@ class ConformerSet:
         reference: str | Path | None = None,
         strict: bool = True,
         _is_folder: bool = True,
+        load_in_memory: bool = True,
     ) -> ConformerSet:
         """
         Build a ConformerSet from a folder containing PDB files.
@@ -103,7 +127,13 @@ class ConformerSet:
         if strict and not pdbs:
             raise FileNotFoundError(f"No .pdb files found in {folder_path}")
 
-        return cls.from_pdb_files(pdbs, reference=reference, strict=strict, _is_folder=True)
+        return cls.from_pdb_files(
+            pdbs,
+            reference=reference,
+            strict=strict,
+            _is_folder=True,
+            load_in_memory=load_in_memory,
+        )
 
     @classmethod
     def from_trajectory(
@@ -118,6 +148,7 @@ class ConformerSet:
         stride: int = 1,
         reference: str | Path | None = None,
         _is_folder: bool = False,
+        load_in_memory: bool = True,
     ) -> ConformerSet:
         """
         Build a ConformerSet from a trajectory (e.g. XTC) by creating one ConformerRef per frame.
@@ -155,7 +186,7 @@ class ConformerSet:
                 raise ValueError("Frame indices in `frames` must be >= 0.")
             frame_indices = tuple(frames)
         else:
-            # Mode 2: range over known number of frames
+        # Mode 2: range over known number of frames
             if n_frames is None:
                 raise ValueError("You must provide either `frames` or `n_frames`.")
             if n_frames < 0:
@@ -176,6 +207,7 @@ class ConformerSet:
         return cls(
             conformers=conformers,
             reference=ref_path,
+            load_in_memory=load_in_memory,
         )
 
     @classmethod
@@ -191,6 +223,7 @@ class ConformerSet:
         reference: str | Path | None = None,
         strict: bool = True,
         _is_folder: bool = False,
+        load_in_memory: bool = True,
     ) -> ConformerSet:
         """
         Unified constructor for common conformer sources.
@@ -227,6 +260,7 @@ class ConformerSet:
                 pdb_files=pdb_files,
                 reference=reference,
                 strict=strict,
+                load_in_memory=load_in_memory,
             )
 
         if folder is not None:
@@ -236,6 +270,7 @@ class ConformerSet:
                 reference=reference,
                 strict=strict,
                 _is_folder=True,
+                load_in_memory=load_in_memory,
             )
 
         # Trajectory + topology
@@ -255,6 +290,7 @@ class ConformerSet:
             n_frames=n_frames_total,
             stride=stride,
             reference=reference,
+            load_in_memory=load_in_memory,
         )
 
     def subset(self, indices: Sequence[int]) -> ConformerSet:
@@ -264,10 +300,7 @@ class ConformerSet:
         This is a cheap view: it reuses existing ConformerRef instances.
         """
         if not indices:
-            return ConformerSet(
-                conformers=tuple(),
-                reference=self.reference,
-            )
+            return self._new_like(conformers=tuple(), loaded=tuple())
 
         n = len(self.conformers)
         idx_list = list(indices)
@@ -276,10 +309,10 @@ class ConformerSet:
                 raise IndexError(f"Conformer index out of range: {i}")
 
         new_conformers = tuple(self.conformers[i] for i in idx_list)
-        return ConformerSet(
-            conformers=new_conformers,
-            reference=self.reference,
-        )
+        loaded: tuple[Any, ...] | None = None
+        if self._in_memory_conformations is not None:
+            loaded = tuple(self._in_memory_conformations[i] for i in idx_list)
+        return self._new_like(conformers=new_conformers, loaded=loaded)
 
     def split_by_indices(self, indices: Sequence[int]) -> Tuple[ConformerSet, ConformerSet]:
         """
@@ -302,14 +335,21 @@ class ConformerSet:
             else:
                 dropped.append(ref)
 
-        kept_set = ConformerSet(
-            conformers=tuple(kept),
-            reference=self.reference,
-        )
-        dropped_set = ConformerSet(
-            conformers=tuple(dropped),
-            reference=self.reference,
-        )
+        kept_loaded: tuple[Any, ...] | None = None
+        dropped_loaded: tuple[Any, ...] | None = None
+        if self._in_memory_conformations is not None:
+            kept_loaded_list: list[Any] = []
+            dropped_loaded_list: list[Any] = []
+            for pos, conf in enumerate(self._in_memory_conformations):
+                if pos in idx_set:
+                    kept_loaded_list.append(conf)
+                else:
+                    dropped_loaded_list.append(conf)
+            kept_loaded = tuple(kept_loaded_list)
+            dropped_loaded = tuple(dropped_loaded_list)
+
+        kept_set = self._new_like(conformers=tuple(kept), loaded=kept_loaded)
+        dropped_set = self._new_like(conformers=tuple(dropped), loaded=dropped_loaded)
         return kept_set, dropped_set
 
     def split_by_mask(self, mask: Sequence[bool]) -> Tuple[ConformerSet, ConformerSet]:
@@ -332,14 +372,21 @@ class ConformerSet:
             else:
                 dropped.append(ref)
 
-        kept_set = ConformerSet(
-            conformers=tuple(kept),
-            reference=self.reference,
-        )
-        dropped_set = ConformerSet(
-            conformers=tuple(dropped),
-            reference=self.reference,
-        )
+        kept_loaded: tuple[Any, ...] | None = None
+        dropped_loaded: tuple[Any, ...] | None = None
+        if self._in_memory_conformations is not None:
+            kept_loaded_list: list[Any] = []
+            dropped_loaded_list: list[Any] = []
+            for conf, flag in zip(self._in_memory_conformations, mask):
+                if flag:
+                    kept_loaded_list.append(conf)
+                else:
+                    dropped_loaded_list.append(conf)
+            kept_loaded = tuple(kept_loaded_list)
+            dropped_loaded = tuple(dropped_loaded_list)
+
+        kept_set = self._new_like(conformers=tuple(kept), loaded=kept_loaded)
+        dropped_set = self._new_like(conformers=tuple(dropped), loaded=dropped_loaded)
         return kept_set, dropped_set
 
     def filter(self, fn: Callable[[int], bool]) -> ConformerSet:
@@ -411,6 +458,7 @@ class ConformerSet:
         return cls(
             conformers=tuple(all_conformers),
             reference=ref_path,
+            load_in_memory=all(s.load_in_memory for s in sets) if sets else True,
         )
 
     def to_pdb(self, output_dir: Path) -> None:
@@ -429,67 +477,18 @@ class ConformerSet:
         output_dir.mkdir(parents=True, exist_ok=True)
 
         filename_counts: dict[str, int] = {}
-        traj_loaded = {}
+        traj_loaded: dict[tuple[Path, Path], Any] = {}
 
         for ref in self.conformers:
             if ref.frame is None:
-                out_name = ref.path.name
-                #name_no_ext = out_name.rsplit('.', 1)[0]
-                count = filename_counts.get(out_name, 0)
-                if count == 0:
-                    out_final = out_name
-                else:
-                    if '.' in out_name:
-                        base, ext = out_name.rsplit('.', 1)
-                        out_final = f"{base}_{count}.{ext}"
-                    else:
-                        out_final = f"{out_name}_{count}"
-                filename_counts[out_name] = count + 1
-
-                out_path = output_dir / out_final
-                shutil.copy2(ref.path, out_path)
+                _export_static(ref=ref, output_dir=output_dir, counts=filename_counts)
             else:
-                # Trajectory frame. Name: <traj_basename>_<frame>.pdb
-                if ref.topology is None:
-                    raise ValueError(
-                        f"ConformerRef with trajectory source {ref.path} (frame {ref.frame}) is missing a topology."
-                    )
-                traj_path = ref.path
-                topo_path = ref.topology
-                traj_key = (traj_path, topo_path)
-                # Trajectory IO: load only once per (src, topo)
-                if traj_key not in traj_loaded:
-                    try:
-                        import mdtraj as md  # type: ignore
-                    except ImportError as e:  # pragma: no cover - import error path
-                        msg = (
-                            "mdtraj is required to export trajectory frames to PDB. "
-                            "Install it with `pip install mdtraj`."
-                        )
-                        raise ImportError(msg) from e
-                    traj_loaded[traj_key] = md.load(str(traj_path), top=str(topo_path))
-                traj = traj_loaded[traj_key]
-
-                frame_idx = ref.frame
-                traj_basename = traj_path.stem
-                out_name = f"{traj_basename}_{frame_idx}.pdb"
-
-                count = filename_counts.get(out_name, 0)
-                if count == 0:
-                    out_final = out_name
-                else:
-                    # Insert suffix before .pdb
-                    if out_name.endswith('.pdb'):
-                        prefix = out_name[:-4]
-                        out_final = f"{prefix}_{count}.pdb"
-                    else:
-                        out_final = f"{out_name}_{count}"
-                filename_counts[out_name] = count + 1
-
-                out_path = output_dir / out_final
-
-                # Export only the requested frame (keep as single-frame)
-                traj[frame_idx].save_pdb(str(out_path))
+                _export_frame(
+                    ref=ref,
+                    output_dir=output_dir,
+                    counts=filename_counts,
+                    traj_cache=traj_loaded,
+                )
         return
 
     def __repr__(self) -> str:
@@ -530,6 +529,62 @@ class ConformerSet:
     def __contains__(self, item: ConformerRef) -> bool:
         return item in self.conformers
 
+    def get_conformation(self, index: int) -> Any:
+        """Return one conformation by index."""
+        if index < 0 or index >= len(self.conformers):
+            raise IndexError(f"Conformer index out of range: {index}")
+        if self._in_memory_conformations is not None:
+            return self._in_memory_conformations[index]
+        return self._load_conformation(self.conformers[index])
+
+    def get_conformations(self) -> tuple[Any, ...]:
+        """Return all conformations for this set."""
+        if self._in_memory_conformations is not None:
+            return self._in_memory_conformations
+        return tuple(self._load_conformation(ref) for ref in self.conformers)
+
+    def _new_like(
+        self,
+        *,
+        conformers: tuple[ConformerRef, ...],
+        loaded: tuple[Any, ...] | None = None,
+    ) -> ConformerSet:
+        should_load = self.load_in_memory and loaded is None
+        new_set = ConformerSet(
+            conformers=conformers,
+            reference=self.reference,
+            _is_folder=self._is_folder,
+            load_in_memory=should_load,
+        )
+        if self.load_in_memory and loaded is not None:
+            object.__setattr__(new_set, "_in_memory_conformations", loaded)
+            object.__setattr__(new_set, "load_in_memory", True)
+        return new_set
+
+    def _load_conformation(self, ref: ConformerRef) -> Any:
+        try:
+            import mdtraj as md  # type: ignore
+        except ImportError as e:  # pragma: no cover - import error path
+            msg = (
+                "mdtraj is required to load conformations in memory. "
+                "Install it with `pip install mdtraj`."
+            )
+            raise ImportError(msg) from e
+
+        if ref.frame is None:
+            return md.load(str(ref.path))
+
+        if ref.topology is None:
+            raise ValueError(
+                f"ConformerRef with trajectory {ref.path} (frame {ref.frame}) is missing a topology."
+            )
+        traj = _get_trajectory(
+            traj_path=ref.path,
+            topo_path=ref.topology,
+            cache=self._trajectory_cache,
+        )
+        return traj[ref.frame]
+
 
 def _count_trajectory_frames_mdtraj(trajectory: Path, topology: Path) -> int:
     """
@@ -550,3 +605,69 @@ def _count_trajectory_frames_mdtraj(trajectory: Path, topology: Path) -> int:
     for chunk in md.iterload(str(trajectory), top=str(topology)):
         n_frames += chunk.n_frames
     return n_frames
+
+
+def _resolve_filename(name: str, counts: dict[str, int]) -> str:
+    """Return a non-overwriting filename using per-name counts."""
+    count = counts.get(name, 0)
+    if count == 0:
+        resolved = name
+    else:
+        if "." in name:
+            base, ext = name.rsplit(".", 1)
+            resolved = f"{base}_{count}.{ext}"
+        else:
+            resolved = f"{name}_{count}"
+    counts[name] = count + 1
+    return resolved
+
+
+def _export_static(ref: ConformerRef, output_dir: Path, counts: dict[str, int]) -> None:
+    """Copy a static conformer path to output with collision-safe naming."""
+    out_name = ref.path.name
+    out_final = _resolve_filename(out_name, counts)
+    out_path = output_dir / out_final
+    shutil.copy2(ref.path, out_path)
+
+
+def _get_trajectory(
+    traj_path: Path,
+    topo_path: Path,
+    cache: dict[tuple[Path, Path], Any],
+) -> Any:
+    """Load and cache a trajectory for a trajectory/topology pair."""
+    traj_key = (traj_path, topo_path)
+    if traj_key not in cache:
+        try:
+            import mdtraj as md  # type: ignore
+        except ImportError as e:  # pragma: no cover - import error path
+            msg = (
+                "mdtraj is required to export trajectory frames to PDB. "
+                "Install it with `pip install mdtraj`."
+            )
+            raise ImportError(msg) from e
+        cache[traj_key] = md.load(str(traj_path), top=str(topo_path))
+    return cache[traj_key]
+
+
+def _export_frame(
+    ref: ConformerRef,
+    output_dir: Path,
+    counts: dict[str, int],
+    traj_cache: dict[tuple[Path, Path], Any],
+) -> None:
+    """Export one trajectory frame as a single-frame PDB file."""
+    if ref.topology is None:
+        raise ValueError(
+            f"ConformerRef with trajectory {ref.path} (frame {ref.frame}) is missing a topology."
+        )
+    traj_path = ref.path
+    topo_path = ref.topology
+    traj = _get_trajectory(traj_path=traj_path, topo_path=topo_path, cache=traj_cache)
+
+    frame_idx = ref.frame
+    traj_basename = traj_path.stem
+    out_name = f"{traj_basename}_{frame_idx}.pdb"
+    out_final = _resolve_filename(out_name, counts)
+    out_path = output_dir / out_final
+    traj[frame_idx].save_pdb(str(out_path))
