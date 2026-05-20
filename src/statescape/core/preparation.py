@@ -85,29 +85,3 @@ def add_hydrogens(
         keep_water=keep_water) for i in range(traj.n_frames)]
 
     return md.join(frames)
-
-def add_hydrogens_missmatch(
-    traj: md.Trajectory,
-    *,
-    ph: float = 7.0,
-    fix_missing_residues: bool = True,
-    fix_missing_atoms: bool = True,
-    replace_nonstandard: bool = True,
-    remove_heterogens: bool = True,
-    keep_water: bool = True,
-) -> md.Trajectory:
-    """
-    Add hydrogens to each frame and save to disk.
-    Returns list of written PDB paths.
-    """
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    
-    paths = []
-    for i in range(traj.n_frames):
-        fixed = _fix_frame(traj[i], ph, ...)
-        path = output_dir / f"frame_{i:05d}.pdb"
-        fixed.save_pdb(str(path))
-        paths.append(path)
-    
-    return paths

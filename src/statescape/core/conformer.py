@@ -8,7 +8,7 @@ from pathlib import Path
 from natsort import natsorted
 from typing import Iterable, Sequence
 
-from .preparation import add_hydrogens, add_hydrogens_missmatch, _fix_frame
+from .preparation import add_hydrogens, _fix_frame
 from statescape.util import save_pdb
 from statescape.filters import masks
 from statescape.analysis import features, dimensionality, clustering
@@ -284,46 +284,6 @@ class ConformerSet:
         )
         return self._from_traj(fixed, ref=self._ref)
 
-    def reduce_mismatch(
-        self,
-        *,
-        ph: float = 7.0,
-        fix_missing_residues: bool = True,
-        fix_missing_atoms: bool = True,
-        replace_nonstandard: bool = True,
-        remove_heterogens: bool = True,
-        keep_water: bool = True,
-        output_dir:str | Path, 
-        prefix: str = "cluster",
-        subfolders: bool = True
-    ) -> list[Path]:
-        """
-        Add hydrogens to each frame and save to disk.
-        Since protonated frames may have different topologies,
-        this returns paths instead of a ConformerSet.
-        Use the returned paths directly as MD seeds.
-        """
-        output_dir = Path(output_dir)
-        #output_dir.mkdir(parents=True, exist_ok=True)
-        paths = []
-        for i in range(self._traj.n_frames):
-            subfolder = output_dir / f"{prefix}_{i:02d}" if subfolders == True else output_dir
-            subfolder.mkdir(parents=True, exist_ok=True)  # create the directory before saving
-            fixed = _fix_frame(
-                self._traj[i], ph,
-                fix_missing_residues=fix_missing_residues,
-                fix_missing_atoms=fix_missing_atoms,
-                replace_nonstandard=replace_nonstandard,
-                remove_heterogens=remove_heterogens,
-                keep_water=keep_water
-            )
-
-
-            path = subfolder / f"{self._names[i]}.pdb"
-            fixed.save_pdb(str(path))
-            paths.append(path)
-        return paths
-
 
     def save_cluster_representatives(
         self, 
@@ -331,11 +291,22 @@ class ConformerSet:
         output_dir: str | Path,
         *,
         prefix: str = "cluster",
-        subfolders: bool = True
+        subfolders: bool = True,
+        protonate: bool = False,
+        ph: float = 7.0,
+        fix_missing_residues: bool = False,
+        fix_missing_atoms: bool = False,
+        replace_nonstandard: bool = False,
+        remove_heterogens: bool = False,
+        keep_water: bool = True
     ) -> list[Path]:
         """
         Save one PDB per cluster representative into per-cluster subfolders. 
-        Set `subfolders = False` to have allthe cluster saved in the same directory.
+        Set `subfolders = False` to have all the clusters saved in the same directory.
+
+        If `protonate = True`, hydrogen atoms are added at ph = `ph` (default = 7.0) before saving.
+
+        `output_dir` structure if `subfolders = True`:
 
         output_dir/
         ├── cluster_00/
@@ -348,12 +319,25 @@ class ConformerSet:
         """
         output_dir = Path(output_dir)
         written = []
-        for cid, frame in representatives.items():
-            subfolder = output_dir / f"{prefix}_{cid:02d}" if subfolders == True else output_dir
-            name = self._names[frame]
-            path = save_pdb(self._traj[frame], subfolder / f'{name}.pdb')
+        for cid, frame_idx in representatives.items():
+            subfolder = output_dir / f"{prefix}_{cid:02d}" if subfolders else output_dir
+            subfolder.mkdir(parents=True, exist_ok=True)
+            name = self._names[frame_idx]
+            frame = self._traj[frame_idx]
+
+            if protonate:
+                frame = _fix_frame(
+                    frame, ph,
+                    fix_missing_residues=fix_missing_residues,
+                    fix_missing_atoms=fix_missing_atoms,
+                    replace_nonstandard=replace_nonstandard,
+                    remove_heterogens=remove_heterogens,
+                    keep_water=keep_water,
+                )
+
+            path = save_pdb(frame, subfolder / f"{name}.pdb")
             written.append(path)
-        return f'Saved conformers: {written}'
+        return written
         
 
     # properties
