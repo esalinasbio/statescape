@@ -46,3 +46,25 @@ def save_pdb(
     out.parent.mkdir(parents=True, exist_ok=True)
     traj.save_pdb(out)
     return out
+
+def save_colvar(
+    features: np.ndarray,
+    labels: list[str],
+    path: str | Path,
+    *,
+    time: np.ndarray | list | None = None
+) -> Path:
+    """
+    Save feature array as a PLUMED COLVAR file.
+    """
+    out = Path(path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    n_frames = features.shape[0]
+    if time is None:
+        time = np.arange(n_frames, dtype=float)
+
+    header = "#! FIELDS time " + " ".join(labels)
+    data = np.column_stack([time, features])
+    np.savetxt(out, data, header=header, comments="", fmt="%.6f")
+    return out

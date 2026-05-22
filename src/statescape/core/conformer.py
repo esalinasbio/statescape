@@ -9,7 +9,7 @@ from natsort import natsorted
 from typing import Iterable, Sequence
 
 from .preparation import add_hydrogens, _fix_frame
-from statescape.util import save_pdb
+from statescape.util import save_pdb, save_colvar
 from statescape.filters import masks
 from statescape.analysis import features, dimensionality, clustering
 from statescape.analysis.dimensionality import ReductionResult
@@ -170,14 +170,12 @@ class ConformerSet:
             "all_dihedrals"       : lambda: features.all_dihedrals(self._traj, **kwargs),
             "custom"              : lambda: features.custom(self._traj, **kwargs),
         }
-
         if method == "custom" and "selection" not in kwargs:
             raise ValueError("'custom' method requires a 'selection' argument.")
-
         if method not in feature_map:
             raise ValueError(f"Unknown feature method: {method!r}. Available: {list(feature_map.keys())}")
-
         return feature_map[method]()
+
 
     def dimensionality(
         self,
@@ -205,7 +203,7 @@ class ConformerSet:
         }
 
         if features is None:
-            features = self.compute_features(feature_method, **kwargs)
+            features, _ = self.compute_features(feature_method, **kwargs)
 
         if method not in dim_map:
             raise ValueError(f"Unknown dimensionality reduction: {method!r}. Available: {list(dim_map.keys())}")
@@ -338,8 +336,20 @@ class ConformerSet:
             path = save_pdb(frame, subfolder / f"{name}.pdb")
             written.append(path)
         return written
-        
 
+    def save_features_colvar(
+        self,
+        path: str | Path,
+        method: str = 'all_dihedrals',
+        **kwargs
+    ):
+        """
+        Compute features and save them as a PLUMED COLVAR file.
+        By default, computes backbone and side chain dihedrals (phi, psi, chi1, chi2).
+        """
+        features, labels = self.compute_features(method, **kwargs)
+        return save_colvar(features, labels, path)
+        
     # properties
 
     @property
