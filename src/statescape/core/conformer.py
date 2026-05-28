@@ -38,7 +38,6 @@ class ConformerSet:
         #self._input = input if input is not None else trajectory
         self._input = input
         self._source = _verify_source(input)
-        
 
         if trajectory is not None:
             if isinstance(trajectory, md.Trajectory):
@@ -151,7 +150,7 @@ class ConformerSet:
     ) -> np.ndarray:
         """
         Extract a feature matrix from this ConformerSet.
-        Returns (n_frames, n_features) array.
+        Returns (features, labels) where features has shape (n_frames, n_features).
 
         Methods
         -------
@@ -162,19 +161,7 @@ class ConformerSet:
         'all_dihedrals'       : all psi/phi/chi1/chi2 dihedrals (sin/cos transformed by default)
         'custom'              : Pairwise distanes in `selection`. Requires `selection` kwarg
         """
-        feature_map = {
-            "ca_coordinates"      : lambda: features.ca_coordinates(self._traj, **kwargs),
-            "ca_distances"        : lambda: features.ca_distances(self._traj, **kwargs),
-            "backbone_dihedrals"  : lambda: features.backbone_dihedrals(self._traj, **kwargs),
-            "sidechain_dihedrals" : lambda: features.sidechain_dihedrals(self._traj, **kwargs),
-            "all_dihedrals"       : lambda: features.all_dihedrals(self._traj, **kwargs),
-            "custom"              : lambda: features.custom(self._traj, **kwargs),
-        }
-        if method == "custom" and "selection" not in kwargs:
-            raise ValueError("'custom' method requires a 'selection' argument.")
-        if method not in feature_map:
-            raise ValueError(f"Unknown feature method: {method!r}. Available: {list(feature_map.keys())}")
-        return feature_map[method]()
+        return features.featurize(self._traj, method, **kwargs)
 
 
     def dimensionality(

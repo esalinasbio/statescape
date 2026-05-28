@@ -143,6 +143,38 @@ def custom(
     
     return coords.reshape(coords.shape[0], -1), labels
 
+def featurize(
+    traj: md.Trajectory,
+    method: str = "all_dihedrals",
+    **kwargs
+) -> tuple[np.ndarray, list[str]]:
+    """
+    Extract a feature matrix from an `md.Trajectory`.
+    Returns (features, labels) where features has shape (n_frames, n_features).
+
+    Methods
+    -------
+    'ca_coordinates'      : flat C-alpha xyz coordinates (default)
+    'ca_distances'        : pairwise C-alpha distances
+    'backbone_dihedrals'  : backbone phi/psi angles (sin/cos transformed by default)
+    'sidechain_dihedrals' : side chain dihedrals chi1/chi2 (sin/cos transformed by default)
+    'all_dihedrals'       : all psi/phi/chi1/chi2 dihedrals (sin/cos transformed by default)
+    'custom'              : Pairwise distanes in `selection`. Requires `selection` kwarg
+    """
+    feature_map = {
+        "ca_coordinates"      : ca_coordinates,
+        "ca_distances"        : ca_distances,
+        "backbone_dihedrals"  : backbone_dihedrals,
+        "sidechain_dihedrals" : sidechain_dihedrals,
+        "all_dihedrals"       : all_dihedrals,
+        "custom"              : custom,
+    }
+    if method == "custom" and "selection" not in kwargs:
+        raise ValueError("'custom' method requires a 'selection' argument.")
+    if method not in feature_map:
+        raise ValueError(f"Unknown feature method: {method!r}. Available: {list(feature_map.keys())}")
+    return feature_map[method](traj, **kwargs)
+
 def _dih_labels(name: str, atom_idx: np.ndarray, topology) -> list[str]:
     """Build labels for dihedral angles like `phi_5` (phi angle of residue 5)"""
     return [f"{name}_{topology.atom(i[1]).residue.resSeq}" for i in atom_idx]
