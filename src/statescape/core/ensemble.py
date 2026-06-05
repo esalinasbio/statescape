@@ -1,4 +1,5 @@
 from __future__ import annotations
+import select
 
 import mdtraj as md
 import numpy as np
@@ -10,7 +11,8 @@ from natsort import natsorted
 from tqdm.auto import tqdm
 from typing import Iterable, Sequence, Tuple
 
-from statescape.analysis import features, dimensionality, clustering
+from statescape.analysis import features, feature_selection, dimensionality, clustering
+from statescape._vendor.amino._colvar import Colvar
 from statescape.util import save_colvar
 
 class Ensemble:
@@ -179,7 +181,7 @@ class Ensemble:
             if labels is None:
                 labels = label
             elif label != labels:
-                raise ValueError(f'Feature labels differe between trajectories. Trajectory {i} (self._names[i]) have diferent labels.')
+                raise ValueError(f'Feature labels differe between trajectories. Trajectory {i} ({self._names[i]}) have diferent labels.')
 
             if format == "npy":
                 np.save(out_path, feat)
@@ -211,7 +213,7 @@ class Ensemble:
         }
         (output_dir / "features.yaml").write_text(yaml.safe_dump(manifest, sort_keys=False))
 
-        return feat_paths
+        return f"{method} saved in {out_path}"
 
     @staticmethod
     def load_features(features_dir: str | Path) -> tuple[list[Path], list[str], dict]:
@@ -222,9 +224,96 @@ class Ensemble:
         features_dir = Path(features_dir)
         manifest = yaml.safe_load((features_dir / 'features.yaml').read_text())
         labels = yaml.safe_load((features_dir / 'labels.yaml').read_text())
-        feature_paths = [Path(t["feature_path"]) for t in manifest["trajectories"]]
-
+        feature_paths = [Path(t["feature_file"]) for t in manifest["trajectories"]]
         return feature_paths, labels, manifest
+
+    @staticmethod
+    def _load_feature_matrix(path: Path, format: str) -> np.ndarray:
+        """
+        Load feature files as an (n_frames, n_features) feature matrix
+        """
+        if format== 'npy':
+            return np.load(path)
+        return Colvar.from_file(str(path)).data.T # colvar stores (n_features, n_frames)
+
+    def select_features(
+        self, 
+        features_dir: str | Path,
+        *,
+        method: str = 'amino',
+        stride: int = 1,
+        output_dir: str | Path | None = None,
+        **kwargs
+    ) -> list [str]:
+        """
+        Run Automatic feature selection
+        Loads the feature directory, concatenates trajectories (optionally strided), and runs
+        the feature selection method.
+        If `output_dir` is given, writes a reduced feature set to disk.
+
+        Returns the selected feature labels.
+        """
+        feature_paths, labels, manifest = self.load_features(features_dir)
+        format = manifest["format"]
+
+        trajs = []
+        for i in feature_paths:
+            X = self._load_feature_matrix(Path(i), format)
+            if stride > 1:
+                X = X[::stride]
+            trajs.append(X)
+        feature_matrix = np.vstack(trajs)
+
+        selector = {
+            "amino": feature_selection.amino.select,
+        }
+
+        if method not in selector:
+            raise ValueError(f"Unknown selection method: {method!r}. Available: {list(selector)}")
+        selected_labels = selector[method](feature_matrix,labels, **kwargs)
+
+        if output_dir is not None:
+            self._write_selected(output_dir, labels, selected_labels, manifest, format)
+        return selected_labels
+
+    def _write_selected(
+        self, 
+        output_dir: str | Path,
+        labels: list[str], 
+        selected_labels: list[str], 
+        manifest: dict, 
+        format: str
+    ) -> None:
+        """
+        Slice selected columns (`selected_labels`) from each feature file  and save.
+        """
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        ext = "npy" if format == "npy" else "dat"
+        col_idx = [labels.index(i) for i in selected_labels]
+        method = manifest["method"]
+
+        trajs = []
+        for i in manifest['trajectories']:
+            X = self._load_feature_matrix(Path(i['feature_file']), format)
+            X_sel = X[:, col_idx]
+            out_path = output_dir / f"{i["name"]}_{method}_selected.{ext}"
+            if format == "npy":
+                np.save(out_path, X_sel)
+            else:
+                save_colvar(X_sel, selected_labels, out_path)
+            trajs.append({**i, "feature_file": str(out_path), "n_frames": X_sel.shape[0]})
+
+        (output_dir / "labels.yaml").write_text(yaml.safe_dump(selected_labels, sort_keys=False))
+        new_manifest = {
+            **manifest,
+            "method": f"{method}_selected",
+            "n_features": len(selected_labels),
+            "trajectories": trajs
+        }
+        (output_dir / "manifest.yaml").write_text(yaml.safe_dump(new_manifest, sort_keys=False))
+
+
 
     #properties
 
@@ -234,7 +323,7 @@ class Ensemble:
 
     @property
     def names (self) -> list[str]:
-        return [self._names]
+        return list(self._names)
 
     @property
     def trajectories(self) -> list[Path]:

@@ -14,7 +14,7 @@ by calling `af2rave amino`
 from __future__ import annotations
 
 from ._colvar import Colvar
-from . import amino
+from . import _amino as amino
 
 import numpy as np
 import mdtraj as md

@@ -102,7 +102,7 @@ def all_dihedrals(
     traj: md.Trajectory,
     selection: str = 'all',
     sincos: bool = True
-) -> np.ndarray:
+) -> tuple[np.ndarray, list[str]]:
     """
     All backbone (phi/psi) and sidechain (chi1/chi2) dihedrals. Returns (features, labels).
     Optional: Use sin/cos to handle periodicity (default = True)
@@ -125,6 +125,46 @@ def all_dihedrals(
         labels = [f"sin_{l}" for l in labels] + [f"cos_{l}" for l in labels]
 
     return angles, labels
+
+def distances(
+    traj : md.Trajectory,
+    selection: str | list[str] = 'all',
+    *,
+    exclude_neighbors: int = 1
+) -> tuple[np.ndarray, list[str]]:
+    """
+    Pairwise distances within each selection, in Angstrom. Returns (features, labels)
+    `selection` can be:
+        - a single string: all pairwise distances within that selection
+        - list of strings: all pairwise distances within EACH selection separately, concatenated.
+            Distances are not computed across different selections.
+
+    Parameters:
+    -----------
+    `exclude_neighbors`: spik pairs whose residues are this many postions apart in the sequence. Set to 0 to keep all pairs. (default: 1)
+    """
+    selections = [selection] if isinstance(selection, str) else selection
+    top = traj.topology
+
+    pairs, labels = [], []
+    for sel in selections:
+        index = validate_selection(top, sel)
+        for idx, i in enumerate(index):
+            ri = top.atom(i).residue.index
+            for j in index[idx + 1:]:
+                rj = top.atom(j).residue.index
+                if abs(ri - rj) > exclude_neighbors:
+                    pairs.append((i,j))
+                    ai, aj = top.atom(i), top.atom(j)
+                    labels.append(f"{ai.name}_{ai.residue.resSeq}-{aj.name}_{aj.residue.resSeq}")
+
+    if not pairs:
+        raise ValueError(f"No atom pairs left after exluding neighbors within {exclude_neighbors}")
+
+    p = np.array(pairs)
+    dist = md.compute_distances(traj, pairs)
+
+    return dist * 10, labels
 
 def custom(
     traj: md.Trajectory,
@@ -164,6 +204,7 @@ def featurize(
     feature_map = {
         "ca_coordinates"      : ca_coordinates,
         "ca_distances"        : ca_distances,
+        "distances"           : distances,
         "backbone_dihedrals"  : backbone_dihedrals,
         "sidechain_dihedrals" : sidechain_dihedrals,
         "all_dihedrals"       : all_dihedrals,
