@@ -180,6 +180,7 @@ class ConformerSet:
         n_components: int = 10,
         features: np.ndarray | None = None,
         feature_method: str = "ca_coordinates",
+        feature_kwargs: dict | None = None,
         **kwargs
     ) -> ReductionResult:
         """
@@ -192,14 +193,16 @@ class ConformerSet:
         n_components : number of output dimensions
         features : precomputed (n_frames, n_features) array. If None, compute_features(feature_method) is called automatically.
         feature_method : which feature extractor to use when features=None
+        feature_kwargs : kwargs forwarded to the featurizer; **kwargs go to the reducer
         """
+
         dim_map = {
-            "pca" : lambda: dimensionality.pca(features, n_components=n_components),
+            "pca" : lambda: dimensionality.pca(features, n_components=n_components, **kwargs),
             "umap": lambda: dimensionality.umap(features, n_components=n_components, **kwargs)
         }
 
         if features is None:
-            features, _ = self.compute_features(feature_method, **kwargs)
+            features, _ = self.compute_features(feature_method, **(feature_kwargs or {}))
 
         if method not in dim_map:
             raise ValueError(f"Unknown dimensionality reduction: {method!r}. Available: {list(dim_map.keys())}")
