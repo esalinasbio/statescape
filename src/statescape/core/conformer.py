@@ -87,8 +87,15 @@ class ConformerSet:
         traj: md.Trajectory,
         *,
         ref:  str | Path | md.Trajectory | None = None,
+        names: Sequence[str] | None = None
     ) -> ConformerSet:
-        return cls(trajectory=traj, reference=ref)
+        obj = cls(trajectory=traj, reference=ref)
+        if names is not None:
+            if len(names) != traj.n_frames:
+                raise ValueError(f"Got {len(names)} names for {traj.n_frames} frames")
+            obj._names = list(names)
+            obj._name_index = {n: i for i, n in enumerate(obj._names)}
+        return obj
 
     @classmethod
     def merge(
@@ -101,27 +108,29 @@ class ConformerSet:
         if not sets:
             raise ValueError("Provide at least 2 ConformerSets.")
         merged = md.join([s.trajectory for s in sets])
+        names = [f"{i}_{n}" for i, s in enumerate(sets) for n in s.names]
         ref = reference if reference is not None else sets[0].reference
-        return cls._from_traj(merged, ref=ref)
+        return cls._from_traj(merged, ref=ref, names=names)
 
     # filtering and manipulation
 
     def subset(self, idx: Sequence[int]) -> ConformerSet:
         """Return a new set containing the requested frame indices."""
-        return self._from_traj(self._traj[np.asarray(idx, dtype=int)], ref=self._ref)
+        idx = np.asarray(idx, dtype=int)
+        return self._from_traj(self._traj[idx], ref=self._ref, names=[self._names[i] for i in idx])
     
     def filter(self, mask: Sequence[bool]) -> ConformerSet:
         """Return a new set containing frames where the mask is True."""
         keep = np.asarray(mask, dtype=bool)
-        if keep.shape[0] != len(self):
-            raise ValueError(f"Mask lenght ({len(keep.shape[0])}) must match number of conformations ({len(self._traj.n_frames)})")
-        return self._from_traj(self._traj[keep], ref=self._ref)
+        if keep.ndim != 1 or keep.shape[0] != len(self):
+            raise ValueError(f"Mask has shape {keep.shape}, expected 1D of lenght {len(self)}")
+        if not keep.any():
+            raise ValueError(f"Mask removed all {len(self)} conformations, nothing left to filter")
+        return self.subset(np.flatnonzero(keep))
 
     def split_by_mask(self, mask: Sequence[bool]) -> tuple[ConformerSet, ConformerSet]:
         """Split into `(kept, dropped)` using a boolean mask."""
         keep = np.asarray(mask, dtype=bool)
-        if keep.shape[0] != len(self._traj.n_frames):
-           raise ValueError(f"Mask lenght ({len(keep.shape[0])}) must match number of conformations ({len(self._traj.n_frames)})")
         return self.filter(keep), self.filter(~keep)
 
     def filter_rmsd(
@@ -267,7 +276,7 @@ class ConformerSet:
             remove_heterogens=remove_heterogens,
             keep_water=keep_water,
         )
-        return self._from_traj(fixed, ref=self._ref)
+        return self._from_traj(fixed, ref=self._ref, names=self._names)
 
 
     def save_cluster_representatives(
