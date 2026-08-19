@@ -7,7 +7,7 @@ authors = [
     { name = "Emiliano Salinas", email = "esalinasbio@gmail.com" },
     { name = "Alejandro Sosa", email = "asosa@bq.unam.mx" }
 ]
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 dependencies = [
     "mdtraj>=1.10.3",
     "natsort>=8.4.0",

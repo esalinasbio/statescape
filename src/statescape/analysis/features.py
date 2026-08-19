@@ -41,7 +41,7 @@ def ca_distances(
     else:
         ca_indices = validate_selection(traj.topology, selection)
     pairs = np.array([(i, j) for idx, i in enumerate(ca_indices) for j in ca_indices[idx + 1:]]) # (num_pairs, 2)
-    distances, _ = md.compute_distances(traj, pairs)
+    distances = md.compute_distances(traj, pairs)
 
     top = traj.topology
     labels = [f'CA_{top.atom(i).residue.resSeq}-CA_{top.atom(j).residue.resSeq}' for i,j in pairs]

@@ -204,6 +204,7 @@ class Ensemble:
             "format": format,
             "n_trajectories": len(self),
             "n_features": len(labels) if labels else None,
+            "kwargs": {k: str(v) for k, v in kwargs.items()},
             "trajectories": [
                 {
                     'name': self._names[i],
@@ -301,7 +302,7 @@ class Ensemble:
         for i in manifest['trajectories']:
             X = self._load_feature_matrix(Path(i['feature_file']), format)
             X_sel = X[:, col_idx]
-            out_path = output_dir / f"{i["name"]}_{method}_selected.{ext}"
+            out_path = output_dir / f'{i["name"]}_{method}_selected.{ext}'
             if format == "npy":
                 np.save(out_path, X_sel)
             else:
@@ -315,7 +316,7 @@ class Ensemble:
             "n_features": len(selected_labels),
             "trajectories": trajs
         }
-        (output_dir / "manifest.yaml").write_text(yaml.safe_dump(new_manifest, sort_keys=False))
+        (output_dir / "features.yaml").write_text(yaml.safe_dump(new_manifest, sort_keys=False))
 
 
 

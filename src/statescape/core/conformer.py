@@ -137,7 +137,7 @@ class ConformerSet:
         self,
         cutoff: float,
         *,
-        selection: str = "name CA"
+        selection: str = "backbone"
     ) -> ConformerSet:
         """Filter conformations with RMSD < `cutoff` to the reference. Defaults to backbone atoms."""
         mask = masks.by_rmsd(self._traj, self._ref, cutoff, selection=selection)
@@ -147,7 +147,7 @@ class ConformerSet:
         self,
         cutoff: float
     ) -> ConformerSet:
-        """Filter conformations with TM-score > `cutoff` to the reference. Defaults to backbone atoms."""
+        """Filter conformations with TM-score > `cutoff` to the reference."""
         mask = masks.by_tmscore(self._traj, self._ref, cutoff)
         return self.filter(mask)
 
