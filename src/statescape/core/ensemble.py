@@ -1,5 +1,4 @@
 from __future__ import annotations
-import select
 
 import mdtraj as md
 import numpy as np
@@ -44,7 +43,7 @@ class Ensemble:
     @classmethod
     def find(
         cls, 
-        root = str | Path,
+        root: str | Path,
         *,
         subfolder: str | None = "*",
         traj_pattern: str,
@@ -156,7 +155,10 @@ class Ensemble:
         output_dir.mkdir(parents=True, exist_ok=True)
         ext = "npy" if format == "npy" else "dat"
         feat_paths, n_frames = [],[]
+        labels_path = output_dir/'labels.yaml'
         labels = None
+        if labels_path.exists() and not overwrite:
+            labels = yaml.safe_load(labels_path.read_text())
 
         pbar = tqdm(
             enumerate(self._pairs),
@@ -164,24 +166,26 @@ class Ensemble:
             desc=f'Computing {method} features'
         )
 
-        for i, (traj, top) in pbar:
+        for i, (traj_path, top_path) in pbar:
             pbar.set_postfix_str(self._names[i])
             out_path = output_dir / f"{self._names[i]}_{method}.{ext}"
             if out_path.exists() and not overwrite:
-                if format =="npy":
-                    file = np.load(out_path, mmap_mode='r')
-                    n_frames.append(file.shape[0])
+                X = self._load_feature_matrix(out_path, format)
+                n_frames.append(int(X.shape[0]))
                 feat_paths.append(out_path)
                 continue
 
-            traj = md.load(str(traj), top=str(top))
+            traj = md.load(str(traj_path), top=str(top_path))
             feat, label = features.featurize(traj, method, **kwargs)
             del traj
 
             if labels is None:
                 labels = label
             elif label != labels:
-                raise ValueError(f'Feature labels differe between trajectories. Trajectory {i} ({self._names[i]}) have diferent labels.')
+                raise ValueError(
+                    f'Feature labels differ for trajectory {i} ({self._names[i]}, {traj_path}):'
+                    f'got {len(label)} labels, expected {len(labels)}'
+                )
 
             if format == "npy":
                 np.save(out_path, feat)
@@ -189,11 +193,11 @@ class Ensemble:
                 save_colvar(feat, label, out_path)
 
             n_frames.append(feat.shape[0])
-            feat_paths.append(str(out_path))
+            feat_paths.append(out_path)
         
         #write shared label file
         if labels is not None:
-            (output_dir / "labels.yaml").write_text(yaml.safe_dump(labels, sort_keys=False))
+            labels_path.write_text(yaml.safe_dump(labels, sort_keys=False))
         #write manifest
         manifest = {
             "method": method,
@@ -213,7 +217,7 @@ class Ensemble:
         }
         (output_dir / "features.yaml").write_text(yaml.safe_dump(manifest, sort_keys=False))
 
-        return f"{method} saved in {out_path}"
+        return feat_paths
 
     @staticmethod
     def load_features(features_dir: str | Path) -> tuple[list[Path], list[str], dict]:
