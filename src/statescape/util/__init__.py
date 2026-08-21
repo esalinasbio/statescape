@@ -1,12 +1,21 @@
 from __future__ import annotations
+
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import mdtraj as md
 import numpy as np
 
+from statescape._vendor.amino._colvar import Colvar
+
 if TYPE_CHECKING:
     from statescape.core.conformer import ConformerSet
+
+def as_trajectory(obj: md.Trajectory | ConformerSet) -> md.Trajectory:
+    """
+    Return the underlying trajecotry of a ConformerSet, or `obj` unchanged
+    """ 
+    return getattr(obj, "trajectory", obj)
 
 def validate_selection(
     top: md.Topology,
@@ -26,20 +35,34 @@ def validate_selection(
     
     return idx
 
-def get_sequence(
-    traj: md.Trajectory | ConformerSet
-):
-    top = traj.topology
-    seq = [res.code for res in top.residues]
+def get_sequence(traj: md.Trajectory | ConformerSet) -> str:
+    """
+    One letter sequence of protein residues in `traj`
+    Non protein residues are skipped, unknown protein residues are written as X
+    """
+    top = as_trajectory(traj).topology
+    seq = [res.code or "X" for res in top.residues if res.is_protein]
     return "".join(seq)
+
+def load_colvar(path: str | Path) -> np.ndarray:
+    """Reads a PLUMED COLVAR file as an (n_frames, n_features) array."""
+    return Colvar.from_file(str(path)).data.T # colvar stores (n_features, n_frames)
+
+def load_feature_matrix(path: str | Path, *, format: str) -> np.ndarray:
+    """Load a feature file as an (n_frames, n_features) array"""
+    path = Path(path)
+    if format == 'npy':
+        return np.load(path)
+    if format == 'colvar':
+        return load_colvar(path)
+    raise ValueError(f"Unknown feature format {format!r} for {path}")
 
 def save_pdb(
     traj: md.Trajectory | ConformerSet,
     path
 ):
     """Save a single-frame trajectory as a PDB file. Returns the written path."""
-    if type(traj).__name__ == "ConformerSet":
-        traj = traj.trajectory
+    traj = as_trajectory(traj)
     if len(traj) != 1:
         raise ValueError(f"Expected a single frame, got {len(traj)}.")
     out = Path(path)

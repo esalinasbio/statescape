@@ -25,7 +25,7 @@ class Ensemble:
         self,
         pairs: list[Tuple[Path,Path]],
         *,
-        names: list[str]
+        names: list[str] | None = None
     ):
         """
         Build from explicit (trajectory, topology) pairs.

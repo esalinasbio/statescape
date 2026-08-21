@@ -123,9 +123,7 @@ class ConformerSet:
         """Return a new set containing frames where the mask is True."""
         keep = np.asarray(mask, dtype=bool)
         if keep.ndim != 1 or keep.shape[0] != len(self):
-            raise ValueError(f"Mask has shape {keep.shape}, expected 1D of lenght {len(self)}")
-        if not keep.any():
-            raise ValueError(f"Mask removed all {len(self)} conformations, nothing left to filter")
+            raise ValueError(f"Mask has shape {keep.shape}, expected 1D of max lenght {len(self)}")
         return self.subset(np.flatnonzero(keep))
 
     def split_by_mask(self, mask: Sequence[bool]) -> tuple[ConformerSet, ConformerSet]:
@@ -178,7 +176,7 @@ class ConformerSet:
         method: str = 'pca',
         *,
         n_components: int = 10,
-        features: np.ndarray | None = None,
+        feature_matrix: np.ndarray | None = None,
         feature_method: str = "ca_coordinates",
         feature_kwargs: dict | None = None,
         **kwargs
@@ -191,18 +189,18 @@ class ConformerSet:
         ----------
         method : 'pca' | 'umap' # more will be coming
         n_components : number of output dimensions
-        features : precomputed (n_frames, n_features) array. If None, compute_features(feature_method) is called automatically.
-        feature_method : which feature extractor to use when features=None
-        feature_kwargs : kwargs forwarded to the featurizer; **kwargs go to the reducer
+        feature_matrix : precomputed (n_frames, n_features) array. If None, compute_features(feature_method) is called automatically.
+        feature_method : which feature extractor to use when feature_matrix=None
+        feature_kwargs : kwargs forwarded to the featurizer
         """
 
         dim_map = {
-            "pca" : lambda: dimensionality.pca(features, n_components=n_components, **kwargs),
-            "umap": lambda: dimensionality.umap(features, n_components=n_components, **kwargs)
+            "pca" : lambda: dimensionality.pca(feature_matrix, n_components=n_components, **kwargs),
+            "umap": lambda: dimensionality.umap(feature_matrix, n_components=n_components, **kwargs)
         }
 
-        if features is None:
-            features, _ = self.compute_features(feature_method, **(feature_kwargs or {}))
+        if feature_matrix is None:
+            feature_matrix, _ = self.compute_features(feature_method, **(feature_kwargs or {}))
 
         if method not in dim_map:
             raise ValueError(f"Unknown dimensionality reduction: {method!r}. Available: {list(dim_map.keys())}")
@@ -232,8 +230,8 @@ class ConformerSet:
         """
         cluster_map = {
             "kmeans": lambda: clustering.kmeans(latent_coords, n_clusters=n_clusters, n_components=n_components, **kwargs),
-            "gmm": lambda: clustering.gmm(latent_coords, n_clusters=n_clusters, n_components=n_components),
-            "regular_space": lambda: clustering.regular_space(latent_coords, radius, n_components=n_components)
+            "gmm": lambda: clustering.gmm(latent_coords, n_clusters=n_clusters, n_components=n_components, **kwargs),
+            "regular_space": lambda: clustering.regular_space(latent_coords, radius, n_components=n_components, **kwargs)
         }
 
         if latent_coords is None:
@@ -246,7 +244,7 @@ class ConformerSet:
         return cluster_map[method]()
 
 
-    def reduce(
+    def protonate(
         self,
         *,
         ph: float = 7.0,
