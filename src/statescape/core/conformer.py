@@ -379,6 +379,15 @@ class ConformerSet:
         """the topology file"""
         return self._top_file
 
+    @property
+    def sources(self) -> list[Path] | None:
+        """Source files, or None if it was built in-memory"""
+        if self._source is None:
+            return None
+        if isinstance(self._source, list):
+            return [Path(s) for s in self._source]
+        return [Path(self._source)]
+
     def __len__(self) -> int:
         """Return the number of conformations inside ConformerSet."""
         return self._traj.n_frames
