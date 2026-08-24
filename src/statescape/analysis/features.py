@@ -5,6 +5,7 @@ from statescape.util import validate_selection
 
 def ca_coordinates(
     traj: md.Trajectory,
+    *,
     selection: str = "name CA"
 ) -> tuple[np.ndarray, list[str]]:
     """
@@ -17,8 +18,11 @@ def ca_coordinates(
         ca_indices = validate_selection(traj.topology, f"({selection}) and name CA")
     else:
         ca_indices = validate_selection(traj.topology, selection)
-    traj.superpose(traj, 0, atom_indices=ca_indices)
-    coords = traj.atom_slice(ca_indices).xyz * 10 # nm to Angstrom
+
+    # slice firts, then superpose to avoid changing the caller's trajectory
+    sliced = traj.atom_slice(ca_indices)
+    sliced.superpose(sliced, 0)
+    coords = sliced.xyz * 10 # nm to Angstrom
 
     labels = []
     for i in ca_indices:
@@ -29,6 +33,7 @@ def ca_coordinates(
 
 def ca_distances(
     traj: md.Trajectory,
+    *,
     selection: str = "name CA"
 ) -> tuple[np.ndarray, list[str]]:
     """
@@ -50,6 +55,7 @@ def ca_distances(
 
 def backbone_dihedrals(
     traj: md.Trajectory,
+    *,
     selection: str = 'all',
     sincos: bool = True
 ) -> tuple[np.ndarray, list[str]]:
@@ -75,6 +81,7 @@ def backbone_dihedrals(
 
 def sidechain_dihedrals(
     traj: md.Trajectory,
+    *,
     selection: str = 'all',
     sincos: bool = True
 ) -> tuple[np.ndarray, list[str]]:
@@ -100,6 +107,7 @@ def sidechain_dihedrals(
 
 def all_dihedrals(
     traj: md.Trajectory,
+    *,
     selection: str = 'all',
     sincos: bool = True
 ) -> tuple[np.ndarray, list[str]]:
@@ -128,8 +136,8 @@ def all_dihedrals(
 
 def distances(
     traj : md.Trajectory,
+    *, 
     selection: str | list[str] = 'all',
-    *,
     exclude_neighbors: int = 1
 ) -> tuple[np.ndarray, list[str]]:
     """
@@ -162,18 +170,21 @@ def distances(
         raise ValueError(f"No atom pairs left after exluding neighbors within {exclude_neighbors}")
 
     p = np.array(pairs)
-    dist = md.compute_distances(traj, pairs)
+    dist = md.compute_distances(traj, p)
 
     return dist * 10, labels
 
 def custom(
     traj: md.Trajectory,
+    *,
     selection: str,
 ) -> tuple[np.ndarray, list[str]]:
     """Coordinates of a custom atom selection. Returns (features, labels)."""
     indices = validate_selection(traj.topology, selection)
-    traj.superpose(traj, 0, atom_indices=indices)
-    coords = traj.atom_slice(indices).xyz * 10
+
+    sliced = traj.atom_slice(indices)
+    sliced.superpose(sliced, 0)
+    coords = sliced.xyc *10
     
     labels = []
     for i in indices:
@@ -194,12 +205,13 @@ def featurize(
 
     Methods
     -------
-    'ca_coordinates'      : flat C-alpha xyz coordinates (default)
+    'ca_coordinates'      : superposed C-alpha xyz coordinates (default)
     'ca_distances'        : pairwise C-alpha distances
-    'backbone_dihedrals'  : backbone phi/psi angles (sin/cos transformed by default)
-    'sidechain_dihedrals' : side chain dihedrals chi1/chi2 (sin/cos transformed by default)
-    'all_dihedrals'       : all psi/phi/chi1/chi2 dihedrals (sin/cos transformed by default)
-    'custom'              : Pairwise distanes in `selection`. Requires `selection` kwarg
+    'distances'           : pairwise distances within one or more selections
+    'backbone_dihedrals'  : phi/psi (sin/cos transformed by default)
+    'sidechain_dihedrals' : chi1/chi2 (sin/cos transformed by default)
+    'all_dihedrals'       : phi/psi/chi1/chi2 (sin/cos transformed by default)
+    'custom'              : superposed coordinates of `selection`. Requires `selection`
     """
     feature_map = {
         "ca_coordinates"      : ca_coordinates,
