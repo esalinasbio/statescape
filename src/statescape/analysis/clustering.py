@@ -21,7 +21,6 @@ def kmeans(
     coords: np.ndarray,
     n_clusters: int,
     *,
-    n_components: int = 2,
     random_state: int | None = None
 ) -> tuple[np.ndarray, dict[int, int]]:
     """K-means++ clustering over all columns of `coords`"""
@@ -33,7 +32,6 @@ def gmm(
     coords: np.ndarray,
     n_clusters: int,
     *,
-    n_components: int = 2,
     random_state: int | None = None
 ) -> tuple[np.ndarray, dict[int, int]]:
     """Gaussian Mixture Model clustering over all columns of `coords`"""
@@ -45,8 +43,6 @@ def gmm(
 def regular_space(
     coords: np.ndarray,
     radius: float,
-    *,
-    n_components: int =2
 ) -> tuple[np.ndarray, dict[int, int]]:
     """
     Greedy regular-space clustering over all columns of `coords`.

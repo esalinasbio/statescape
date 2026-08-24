@@ -154,10 +154,13 @@ class ConformerSet:
         self,
         method: str = 'ca_coordinates',
         **kwargs,
-    ) -> np.ndarray:
+    ) -> tuple[np.ndarray, list[str]]:
         """
         Extract a feature matrix from this ConformerSet.
         Returns (features, labels) where features has shape (n_frames, n_features).
+
+        See `statescape.analysis.features.featurize` for the available methods
+        and their keyword arguments.
 
         Methods
         -------
@@ -193,14 +196,13 @@ class ConformerSet:
         feature_method : which feature extractor to use when feature_matrix=None
         feature_kwargs : kwargs forwarded to the featurizer
         """
+        if feature_matrix is None:
+            feature_matrix, _ = self.compute_features(feature_method, **(feature_kwargs or {}))
 
         dim_map = {
             "pca" : lambda: dimensionality.pca(feature_matrix, n_components=n_components, **kwargs),
             "umap": lambda: dimensionality.umap(feature_matrix, n_components=n_components, **kwargs)
         }
-
-        if feature_matrix is None:
-            feature_matrix, _ = self.compute_features(feature_method, **(feature_kwargs or {}))
 
         if method not in dim_map:
             raise ValueError(f"Unknown dimensionality reduction: {method!r}. Available: {list(dim_map.keys())}")
@@ -228,18 +230,23 @@ class ConformerSet:
         n_components : how many dimensions of latent_coords to use
         latent_coords : any (n_frames, n_features) array. If None, PCA over C-alpha coordinates is computed automatically.
         """
-        cluster_map = {
-            "kmeans": lambda: clustering.kmeans(latent_coords, n_clusters=n_clusters, n_components=n_components, **kwargs),
-            "gmm": lambda: clustering.gmm(latent_coords, n_clusters=n_clusters, n_components=n_components, **kwargs),
-            "regular_space": lambda: clustering.regular_space(latent_coords, radius, n_components=n_components, **kwargs)
-        }
-
         if latent_coords is None:
             latent_coords = self.dimensionality().coords
+        latent_coords = np.asarray(latent_coords)
+
         if len(latent_coords) != len(self._traj):
             raise ValueError(f'latent_coords has {len(latent_coords)} rows but ConformerSet has {len(self._traj)} frames.')
+        
+        if latent_coords.shape[1] < n_components:
+            raise ValueError(f'latent_coords has {latent_coords.shape[1]} columns, n_components={n_components} requested')
+
+        cluster_map = {
+            "kmeans": lambda: clustering.kmeans(latent_coords, n_clusters=n_clusters, **kwargs),
+            "gmm": lambda: clustering.gmm(latent_coords, n_clusters=n_clusters, **kwargs),
+            "regular_space": lambda: clustering.regular_space(latent_coords, radius, **kwargs)
+        }
         if method not in cluster_map:
-            raise ValueError(f"Unknown feature method: {method!r}. Available: {list(cluster_map.keys())}")
+            raise ValueError(f"Unknown cluster method: {method!r}. Available: {list(cluster_map.keys())}")
 
         return cluster_map[method]()
 
