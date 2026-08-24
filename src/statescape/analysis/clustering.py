@@ -24,10 +24,10 @@ def kmeans(
     n_components: int = 2,
     random_state: int | None = None
 ) -> tuple[np.ndarray, dict[int, int]]:
-    """K-means++ clustering in the first `n_components` dimensions (default = 2)."""
-    data = coords[:, :n_components] # shape (n_frames, n_components)
-    labels = KMeans(n_clusters=n_clusters, init="k-means++", n_init=20, random_state=random_state).fit_predict(data)
-    return labels, _representatives(data, labels)
+    """K-means++ clustering over all columns of `coords`"""
+    #data = coords[:, :n_components] # shape (n_frames, n_components)
+    labels = KMeans(n_clusters=n_clusters, init="k-means++", n_init=20, random_state=random_state).fit_predict(coords)
+    return labels, _representatives(coords, labels)
 
 def gmm(
     coords: np.ndarray,
@@ -36,15 +36,11 @@ def gmm(
     n_components: int = 2,
     random_state: int | None = None
 ) -> tuple[np.ndarray, dict[int, int]]:
-    """Gaussian Mixture Model clustering in the first `n_components` dimensions (default = 2)."""
-    try:
-        from sklearn.mixture import GaussianMixture
-    except ImportError as e:
-        raise ImportError("Error while importing GaussianMixture") from e
-
-    data = coords[:, :n_components]
-    labels = GaussianMixture(n_components=n_clusters, n_init=10, random_state=random_state).fit_predict(data)
-    return labels, _representatives(data, labels)
+    """Gaussian Mixture Model clustering over all columns of `coords`"""
+    from sklearn.mixture import GaussianMixture
+    #data = coords[:, :n_components]
+    labels = GaussianMixture(n_components=n_clusters, n_init=10, random_state=random_state).fit_predict(coords)
+    return labels, _representatives(coords, labels)
 
 def regular_space(
     coords: np.ndarray,
@@ -53,10 +49,16 @@ def regular_space(
     n_components: int =2
 ) -> tuple[np.ndarray, dict[int, int]]:
     """
-    Greedy regular-space clustering.
-    A new center is created whenever no existing center is within `radius`
+    Greedy regular-space clustering over all columns of `coords`.
+    A new center is created whenever no existing center lies within `radius`
+
+    Notes
+    ------
+    The result depends on the frame order: centres grown sequentially from frame 0,
+    so a reordered or strided `coords` gives different (altough equally valid) set of
+    centers.
     """
-    data = coords[:, :n_components]
+    data = coords
     center_idx = [0]
     centers = [data[0]]
 

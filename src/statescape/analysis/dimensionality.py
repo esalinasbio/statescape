@@ -14,7 +14,7 @@ class ReductionResult:
 
 def pca(
     X: np.ndarray,
-    n_components: int = 10,
+    n_components: int = 2,
     *,
     scale: bool = False  # mean-center only by default
 ) -> ReductionResult:
@@ -33,12 +33,13 @@ def pca(
 def umap(
     X: np.ndarray,
     n_components: int = 2,
+    *,
     scale: bool = True,
     **umap_kwargs,
 ) -> ReductionResult:
     """UMAP over any feature matrix X."""
     try:
-        import umap
+        import umap as umap_learn
     except ImportError as e:
         raise ImportError("umap-learn is required. Install with `pip install umap-learn`.") from e
 
@@ -47,6 +48,9 @@ def umap(
         scaler = StandardScaler()
         X_scaled = scaler.fit_transform(X)
         
-    model = umap.UMAP(n_components=n_components, **umap_kwargs)
+    model = umap_learn.UMAP(n_components=n_components, **umap_kwargs)
     coords = model.fit_transform(X_scaled)
-    return ReductionResult(coords=coords, explained_variance=None, model=model, scaler=None)
+    return ReductionResult(coords=coords, explained_variance=None, model=model, scaler=scaler)
+
+#### TO DO #####
+# Implement tICA
