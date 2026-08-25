@@ -3,16 +3,15 @@ from __future__ import annotations
 import mdtraj as md
 import numpy as np
 import yaml
+import warnings
 
-from glob import glob
 from pathlib import Path
 from natsort import natsorted
 from tqdm.auto import tqdm
-from typing import Iterable, Sequence, Tuple
+from typing import Iterable, Tuple
 
 from statescape.analysis import features, feature_selection, dimensionality, clustering
-from statescape._vendor.amino._colvar import Colvar
-from statescape.util import save_colvar
+from statescape.util import save_colvar, load_feature_matrix
 
 class Ensemble:
     """
@@ -106,9 +105,9 @@ class Ensemble:
             else:
                 top_matches = natsorted(Path(i) for i in sub.glob(top_pattern))
                 if len(top_matches) == 0:
-                    raise FileNotFoundError(f"No trajectory matching '{top_pattern}' inside {sub}.")
+                    raise FileNotFoundError(f"No topology matching '{top_pattern}' inside {sub}.")
                 if len(top_matches) > 1:
-                    raise ValueError(f"Multiple trajectories matching '{top_pattern}' in {sub}: {top_matches}")
+                    raise ValueError(f"Multiple topologies matching '{top_pattern}' in {sub}: {top_matches}")
                 top_path = top_matches[0]
 
             pairs.append((traj_path, top_path))
@@ -170,7 +169,7 @@ class Ensemble:
             pbar.set_postfix_str(self._names[i])
             out_path = output_dir / f"{self._names[i]}_{method}.{ext}"
             if out_path.exists() and not overwrite:
-                X = self._load_feature_matrix(out_path, format)
+                X = load_feature_matrix(out_path, format=format)
                 n_frames.append(int(X.shape[0]))
                 feat_paths.append(out_path)
                 continue
@@ -182,9 +181,14 @@ class Ensemble:
             if labels is None:
                 labels = label
             elif label != labels:
+                first = next((k for k, (a,b) in enumerate(zip(label, labels)) if a != b), None)
+                detail = (
+                    f"First difference at index {first}: got {label[first]!r}, expected {labels[first]!r}"
+                    if first is not None else f"got {len(label)} labels, expected {len(labels)}"
+                )
                 raise ValueError(
-                    f'Feature labels differ for trajectory {i} ({self._names[i]}, {traj_path}):'
-                    f'got {len(label)} labels, expected {len(labels)}'
+                    f"Feature labels differ for trajectory {i} "
+                    f"({self._names[i]}, {traj_path}): {detail}"
                 )
 
             if format == "npy":
@@ -232,14 +236,6 @@ class Ensemble:
         feature_paths = [Path(t["feature_file"]) for t in manifest["trajectories"]]
         return feature_paths, labels, manifest
 
-    @staticmethod
-    def _load_feature_matrix(path: Path, format: str) -> np.ndarray:
-        """
-        Load feature files as an (n_frames, n_features) feature matrix
-        """
-        if format== 'npy':
-            return np.load(path)
-        return Colvar.from_file(str(path)).data.T # colvar stores (n_features, n_frames)
 
     def select_features(
         self, 
@@ -251,28 +247,44 @@ class Ensemble:
         **kwargs
     ) -> list [str]:
         """
-        Run Automatic feature selection
-        Loads the feature directory, concatenates trajectories (optionally strided), and runs
-        the feature selection method.
-        If `output_dir` is given, writes a reduced feature set to disk.
+        Run Automatic feature selection over the whole ensemble
+
+        Loads the feature file, concatenates trajectories (optionally strided), and runs
+        the feature selection method. If `output_dir` is given, writes a reduced feature 
+        set there with the same layout as `features_dir`.
+
+        Unlike `compute_features`, this holds the concatenated feature matrix in memory,
+        so use `stride` on long trajectories.
 
         Returns the selected feature labels.
         """
+        features_dir = Path(features_dir)
         feature_paths, labels, manifest = self.load_features(features_dir)
         format = manifest["format"]
 
         trajs = []
         for i in feature_paths:
-            X = self._load_feature_matrix(Path(i), format)
+            X = load_feature_matrix(Path(i), format=format)
             if stride > 1:
                 X = X[::stride]
             trajs.append(X)
         feature_matrix = np.vstack(trajs)
 
+        if feature_matrix.shape[1] != len(labels):
+            raise ValueError(f"{features_dir / 'labels.yaml'} list {len(labels)} but the"
+                             f"files in {features_dir} have {feature_matrix.shape[1]} columns.")
+
+        size_gb = feature_matrix.nbytes / 1024 ** 3
+        if size_gb > 5.0:
+            warnings.warn(
+                f"select_features loaded {feature_matrix.shape} "
+                f"({size_gb:.1f} GB) from {features_dir}; increase `stride` to reduce size.",
+                stacklevel=2
+            )
+
         selector = {
             "amino": feature_selection.amino.select,
         }
-
         if method not in selector:
             raise ValueError(f"Unknown selection method: {method!r}. Available: {list(selector)}")
         selected_labels = selector[method](feature_matrix,labels, **kwargs)
@@ -300,7 +312,7 @@ class Ensemble:
 
         trajs = []
         for i in manifest['trajectories']:
-            X = self._load_feature_matrix(Path(i['feature_file']), format)
+            X = load_feature_matrix(Path(i['feature_file']), format=format)
             X_sel = X[:, col_idx]
             out_path = output_dir / f'{i["name"]}_{method}_selected.{ext}'
             if format == "npy":
