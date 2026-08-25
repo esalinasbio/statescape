@@ -265,7 +265,7 @@ class ConformerSet:
         cluster_map = {
             "kmeans": lambda: clustering.kmeans(data, n_clusters=n_clusters, **kwargs),
             "gmm": lambda: clustering.gmm(data, n_clusters=n_clusters, **kwargs),
-            "regular_space": lambda: clustering.regular_space(data, radius, **kwargs)
+            "regular_space": lambda: clustering.regular_space(data, radius)
         }
         if method not in cluster_map:
             raise ValueError(f"Unknown cluster method: {method!r}. Available: {list(cluster_map.keys())}")

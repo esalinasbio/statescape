@@ -10,7 +10,7 @@ class ReductionResult:
     coords: np.ndarray                    # (n_frames, n_components) <- the latent space
     model: object                         # fitted model (PCA, UMAP, etc.)
     scaler: StandardScaler | None         # fitted scaler if used
-    explained_variance: np.ndarray | None # Only meaningfull for PCA
+    explained_variance: np.ndarray | None # only meaningfull for PCA
 
 def pca(
     X: np.ndarray,

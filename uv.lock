@@ -236,6 +236,39 @@ wheels = [
 ]
 
 [[package]]
+name = "deeptime"
+version = "0.4.5"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "numpy", version = "2.4.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "scikit-learn", version = "1.7.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "scikit-learn", version = "1.8.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "threadpoolctl" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c7/6c/b95ef5fcbb407e6ffa5157200deb2856dde0a0dad0c84280b66eb0634d5d/deeptime-0.4.5.tar.gz", hash = "sha256:e290101e8a63f2338091866af671821e4d972b9d4fabf3fee4a14777f9aef414", size = 465752, upload-time = "2025-04-09T09:35:12.24Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f2/9f/2cfe8655b8d71dc005aef22b948eaec3dfddcace750e6f08234786c8e326/deeptime-0.4.5-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:d6974d6e736a46e366858c415160beea2e86fdb1fb51e7b69c83dbdf545fb219", size = 1699946, upload-time = "2025-04-09T09:34:32.684Z" },
+    { url = "https://files.pythonhosted.org/packages/66/0d/c814902d5abf243d6d8e7fb3f363c044734c896e7057545a49d22ff7154a/deeptime-0.4.5-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:28d7084f858ab1801f526fe1c996a152947c93b41b48db98055278f2a435d0a3", size = 1583065, upload-time = "2025-04-09T09:34:34.485Z" },
+    { url = "https://files.pythonhosted.org/packages/d9/97/c029ec4a875973f46a007bfbd6c461a3bbdf6321c41525e5cff9b8a66ae5/deeptime-0.4.5-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:88f849730e055f2bcc592ee486e47dbefc23088d49655327363fb0acce983a16", size = 2173599, upload-time = "2025-04-09T09:34:36.331Z" },
+    { url = "https://files.pythonhosted.org/packages/4f/4d/4ced244791babe75e07a8c529a63ffa00efd060a7a04956f5b85cd817bdc/deeptime-0.4.5-cp310-cp310-win_amd64.whl", hash = "sha256:168f89346265a8f244f430a44b79384f9a319ce04748d5a03a7d9f16920b085e", size = 1610767, upload-time = "2025-04-09T09:34:38.772Z" },
+    { url = "https://files.pythonhosted.org/packages/ec/99/7e94f9bec9a92771c033ab6cc217e28ac94c0106ec60c0e16749193c87cb/deeptime-0.4.5-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:a755ebad819f396a2969fdd6a17fa10958807cf4d649f63213d60caccf543099", size = 1716045, upload-time = "2025-04-09T09:34:40.577Z" },
+    { url = "https://files.pythonhosted.org/packages/e3/c1/e10f892f53f10d279a96a2f0d2b2dad3d4543eb420384bed11ad6fa293aa/deeptime-0.4.5-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:499a8a955ad8e9160b86e69b2860c30561e5cf6b72d12170746a345dbc3570a9", size = 1597511, upload-time = "2025-04-09T09:34:42.635Z" },
+    { url = "https://files.pythonhosted.org/packages/89/5c/ab91de6d72c6dd258185cc4931e708504c6420ecfcb8080d4cb886a3de79/deeptime-0.4.5-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:d2c1e148bc6c9cf027347834dd5ba1a5bf51f9cd01e375162f3bd516195b7ccd", size = 2184435, upload-time = "2025-04-09T09:34:44.684Z" },
+    { url = "https://files.pythonhosted.org/packages/87/df/1e25d583049aa622e08c292e15926fca4a790c6334c79ddda55e01fde80a/deeptime-0.4.5-cp311-cp311-win_amd64.whl", hash = "sha256:ea7bead327a709eb703ecb5c2bb6f7a6c18d892b195b6e23840baea61d74fae5", size = 1617714, upload-time = "2025-04-09T09:34:46.455Z" },
+    { url = "https://files.pythonhosted.org/packages/47/c4/ed58619aedb874978f848cb6a525b436c65f2144f9a5795572838f9aacb7/deeptime-0.4.5-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:ff05e51b0763392f3b64b854545a6e41cf9a445fb642d3e690fcafa261cdb3f5", size = 1722245, upload-time = "2025-04-09T09:34:48.31Z" },
+    { url = "https://files.pythonhosted.org/packages/1a/a3/873f0cac65bbab30e0dc5a875cd38993d4991b45ec2ce11a766f90b84179/deeptime-0.4.5-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:69a09c60f9d0e12c035b7be4742fab1988d8e589064492f555c1b9c0b2f1c941", size = 1592659, upload-time = "2025-04-09T09:34:50.116Z" },
+    { url = "https://files.pythonhosted.org/packages/c2/68/4a2efb1dcefaeab852f61b18856f3fe090d79b9e98916e60ca76dd2294d5/deeptime-0.4.5-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:ec9aeb7c2624b63d86f0a011a229ef0d9c643696ae84c78fe19f68c8cfc1bdea", size = 2167372, upload-time = "2025-04-09T09:34:52.099Z" },
+    { url = "https://files.pythonhosted.org/packages/35/b2/bf2c48fff66c56c490fb5b8c5868c6f8da32a51fe69b876ec2081956b4ea/deeptime-0.4.5-cp312-cp312-win_amd64.whl", hash = "sha256:7888d7a8f2f69ea1b0a723ad55652b224d64495a76431e57efab08abc610d1ae", size = 1623701, upload-time = "2025-04-09T09:34:54.112Z" },
+    { url = "https://files.pythonhosted.org/packages/d1/a2/e332b96d53d631abbbd968eadc1b710143ddea1d5e54ec252d225711683b/deeptime-0.4.5-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:d9532eb850416907fe13ed63cf895133879be6afe1c9534bec002f0d60554274", size = 1722105, upload-time = "2025-04-09T09:34:56.443Z" },
+    { url = "https://files.pythonhosted.org/packages/ec/1c/2ec0c307472e20deb2dd31fb5e8b332f52340abf354d9c752303217fe59e/deeptime-0.4.5-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:cd54f676377f6f6de42b830ed459b4ad49fc3e87822225a1c626ddef62861758", size = 1592470, upload-time = "2025-04-09T09:34:58.264Z" },
+    { url = "https://files.pythonhosted.org/packages/df/c7/0bbae335bbcd08613a3aa7bc995f7bd787f3a9c0bb2e40dfd92f6fb6d946/deeptime-0.4.5-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:7fa7a6960cb656dd61b0fd788bc86ae98600cfa3566ef13d55236e1904ee0cab", size = 2169981, upload-time = "2025-04-09T09:35:00.361Z" },
+    { url = "https://files.pythonhosted.org/packages/1f/e9/af97df1aa1ad967c2ca3ec9749c8b719d4d3c78948c3345bb3677b1a6f41/deeptime-0.4.5-cp313-cp313-win_amd64.whl", hash = "sha256:714145dcdb1cc5bdcaa11901482370f75364b32e0ea106d7990e7025ba3a0558", size = 1623493, upload-time = "2025-04-09T09:35:02.444Z" },
+]
+
+[[package]]
 name = "exceptiongroup"
 version = "1.3.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1423,6 +1456,7 @@ name = "statescape"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "deeptime" },
     { name = "mdtraj", version = "1.10.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "mdtraj", version = "1.11.1.post1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "natsort" },
@@ -1446,6 +1480,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "deeptime", specifier = ">=0.4.5" },
     { name = "mdtraj", specifier = ">=1.10.3" },
     { name = "natsort", specifier = ">=8.4.0" },
     { name = "netcdf4", specifier = ">=1.7.3" },

@@ -9,6 +9,7 @@ authors = [
 ]
 requires-python = ">=3.10"
 dependencies = [
+    "deeptime>=0.4.5",
     "mdtraj>=1.10.3",
     "natsort>=8.4.0",
     "netcdf4>=1.7.3",

@@ -1,17 +1,18 @@
 from __future__ import annotations
 
+import warnings
+from typing import Iterable, Tuple
+from pathlib import Path
+
 import mdtraj as md
 import numpy as np
 import yaml
-import warnings
-
-from pathlib import Path
 from natsort import natsorted
 from tqdm.auto import tqdm
-from typing import Iterable, Tuple
 
-from statescape.analysis import features, feature_selection, dimensionality, clustering
-from statescape.util import save_colvar, load_feature_matrix
+from statescape.analysis import clustering, dimensionality, features, feature_selection
+from statescape.analysis.dimensionality import ReductionResult
+from statescape.util import load_feature_matrix, save_colvar, save_pdb
 
 class Ensemble:
     """
@@ -236,6 +237,43 @@ class Ensemble:
         feature_paths = [Path(t["feature_file"]) for t in manifest["trajectories"]]
         return feature_paths, labels, manifest
 
+    def _load_feature_blocks(
+        self,
+        features_dir: str | Path,
+        *,
+        stride: int = 1
+    ) -> tuple[list[np.ndarray], list[str]]:
+        """
+        Loads one feature array per replica. Trajectory doundaries are preserved.
+        Methods that depend on frame order (like tICA) recieve the blocks as they are.
+
+        Parameters
+        ---------
+        features_dir: directory written by `compute_features`
+        stride: load every `stride`-th frame of each file
+
+        Returns
+        -------
+        blocks: list[np.ndarray]
+                `blocks[i]` has shape (n_frames_i, n_features) for simulation i
+        labels: list[str]
+                Feature names, shared by every block
+        """
+        feature_paths, labels, manifest = self.load_features(features_dir)
+        format = manifest['format']
+
+        blocks = []
+        for path in feature_paths:
+            X = load_feature_matrix(path, format=format)
+            # check if feature_matrix has the same number of features as labels
+            if X.shape[1] != len(labels):
+                raise ValueError(f"{path} has {X.shape[1]} columns, but {features_dir / 'labels.yaml'} has {len(labels)} labels")
+            blocks.append(X[::stride] if stride > 1 else X)
+
+        size_gb = sum(b.nbytes for b in blocks) / 1024 ** 3
+        if size_gb > 5.0:
+            warnings.warn(f"Loaded {size_gb:.1f} GB from {features_dir}, increase `stride` to reduce size.", stacklevel=3)
+        return blocks, labels
 
     def select_features(
         self, 
@@ -259,28 +297,12 @@ class Ensemble:
         Returns the selected feature labels.
         """
         features_dir = Path(features_dir)
-        feature_paths, labels, manifest = self.load_features(features_dir)
+        _, _, manifest = self.load_features(features_dir)
         format = manifest["format"]
 
-        trajs = []
-        for i in feature_paths:
-            X = load_feature_matrix(Path(i), format=format)
-            if stride > 1:
-                X = X[::stride]
-            trajs.append(X)
-        feature_matrix = np.vstack(trajs)
-
-        if feature_matrix.shape[1] != len(labels):
-            raise ValueError(f"{features_dir / 'labels.yaml'} list {len(labels)} but the"
-                             f"files in {features_dir} have {feature_matrix.shape[1]} columns.")
-
-        size_gb = feature_matrix.nbytes / 1024 ** 3
-        if size_gb > 5.0:
-            warnings.warn(
-                f"select_features loaded {feature_matrix.shape} "
-                f"({size_gb:.1f} GB) from {features_dir}; increase `stride` to reduce size.",
-                stacklevel=2
-            )
+        blocks, labels = self._load_feature_blocks(features_dir, stride=stride)
+        feature_matrix = np.vstack(blocks)
+        del blocks
 
         selector = {
             "amino": feature_selection.amino.select,
@@ -330,6 +352,149 @@ class Ensemble:
         }
         (output_dir / "features.yaml").write_text(yaml.safe_dump(new_manifest, sort_keys=False))
 
+    ## Dimensionality reduction and clustering
+
+    @staticmethod
+    def _row_index(blocks: list[np.ndarray]) -> np.ndarray:
+        """
+        Map each row of `np.vstack(blocks)` to its origin index
+
+        Returns
+        --------
+        np.ndarray: Shape (n_rows,2). First column is the simulation number, the second
+        column is the frame index within that simulation, counting rows of the block.
+        If strided, it corresponds to strided frames, not frames of the original trajectory
+        """
+        # Maps every item in blocks to a 2D array: [[block_idx, frame_idx], ...]
+        # example: block 0 with 2 frames, and block 1 with 3 frames -> [[0,0], [0,1], [1,0], [1,1], [1,2]]
+        return np.vstack([np.column_stack([np.full(len(b), i), np.arange(len(b))]) for i, b in enumerate(blocks)])
+
+    def dimensionality(
+        self,
+        features_dir: str | Path,
+        *,
+        method: str = 'pca',
+        n_components: int = 10,
+        stride: int = 1,
+        **kwargs
+    ) -> tuple[ReductionResult, np.ndarray]:
+        """
+        Dimensionality reduction over the feature amtrix of the whole MD ensemble.
+        Every simulation is reduced to one shared space, so the resulting coordinates
+        are directly comparable between simulations
+
+        Parameters
+        ----------
+        features_dir: directory written by `compute_features`
+        method: 'pca' or 'umap' (default: pca)
+        n_components: number of output dimensions
+        stride: load every `stride`-th frame of each file
+        **kwargs: passed to the reducer
+
+        Returns
+        -------
+        result: ReductionResult with `.coords` with shape (n_rows, n_components)
+        index: (replica, frame) pair for every row of `result.coords`
+        """
+        blocks, _ = self._load_feature_blocks(features_dir, stride=stride)
+        index = self._row_index(blocks)
+
+        dim_map = {
+            "pca": lambda: dimensionality.pca(np.vstack(blocks), n_components=n_components, **kwargs),
+            "umap": lambda: dimensionality.umap(np.vstack(blocks), n_components=n_components, **kwargs)
+        }
+
+        return dim_map[method](), index
+
+    def cluster(
+        self,
+        coords: np.ndarray,
+        index: np.ndarray,
+        *,
+        method: str = 'kmeans',
+        n_clusters: int = 50,
+        radius: float = 1.5, # only for regular space clustering
+        n_components: int = 2,
+        **kwargs
+    ) -> tuple[np.ndarray, dict[int, tuple[int, int]]]:
+        """
+        Cluster frames in latent coordinates and get one representative per cluster
+
+        Parameters
+        ----------
+        cords: (n_rows,n_features) latent coordinates from dimensionality
+        index: (n_rows, 2) simulation/frame index from dimensionality
+        method: 'kmeans', 'gmm' or 'regular_space' (default: kmeans)
+        n_clusters: number of clusters (kmeans and gmm only)
+        radius: radius threshold (regular_space only)
+        n_components: how many leading columns of `coords` to use.
+            Meaningful only for ordered spaces like PCA. For UMAP, set the 
+            `n_components` at dimensionality reduction time and leave this at the full
+            embedding size
+        **kwargs: passed to the clusterer
+
+        Returns
+        --------
+        labels: Cluster id array of every row of `coords`
+        representatives: Cluster id to the (simulation, frame) pair nearest its centroid
+        """
+        coords = np.asarray(coords)
+        index = np.asarray(index)
+
+        if len(coords) != len(index):
+            raise ValueError(f"coords has {len(coords)} rows but index has {len(index)}.")
+        if coords.ndim != 2:
+            raise ValueError(f'coords must be 2D, got shape {coords.shape}')
+        if coords.shape[1] < n_components:
+            raise ValueError(f"coords has {coords.shape[1]} columns, n_components={n_components} requested")
+
+        data = coords[:, :n_components]
+
+        cluster_map = {
+            "kmeans": lambda: clustering.kmeans(data, n_clusters=n_clusters, **kwargs),
+            "gmm": lambda: clustering.gmm(data, n_clusters=n_clusters, **kwargs),
+            "regular_space": lambda: clustering.regular_space(data, radius)
+        }
+        if method not in cluster_map:
+            raise ValueError(f"Unknown cluster method: {method!r}. Available: {list(cluster_map.keys())}")
+
+        labels, reps = cluster_map[method]()
+        # dictionary {cluster_id: (simulation_idx, frame_idx)}
+        representatives = {int(cid): (int(index[row, 0]), int(index[row, 1])) for cid, row in reps.items()}
+        return labels, representatives
+
+    def save_cluster_representatives(
+            self,
+            representatives: dict[int, tuple[int, int]],
+            output_dir: str | Path,
+            *,
+            stride: int = 1,
+            prefix: str = 'cluster'
+    ) -> list:
+        """
+        """
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        by_sim= {}
+        for cid, (sim, frame) in representatives.items():
+            if not 0 <= sim < len(self):
+                raise ValueError(f'Cluster {cid} mention simulation {sim}, but the ensemble has {len(self)}')
+            by_sim.setdefault(sim, []).append((int(cid), int(frame)))
+
+        write = {}
+        for sim in sorted(by_sim):
+            traj_path, top_path = self._pairs[sim]
+            traj = md.load(str(traj_path), top=str(top_path))
+            for cid, frame in by_sim[sim]:
+                frame_idx = f * stride
+                if frame_idx >= traj.n_frames:
+                    raise IndexError(f"Cluster {cid:}: frame {frame_idx} is out of bonds for {traj_path} ({traj.n_frames} total frames).")
+                out = output_dir / f'{prefix}_{cid:02d}_{self._names[sim]}_f{frame_idx}.pdb'
+                write[cid] = save_pdb(traj[frame_idx], out)
+            del traj
+
+        return [write[cid] for cid in sorted(write)]
 
 
     #properties
