@@ -1,27 +1,63 @@
 import numpy as np
 import mdtraj as md
+from pathlib import Path
 
 from statescape.util import validate_selection
+
+def _superpose(
+    sliced: md.Trajectory,
+    indices: np.ndarray,
+    selection: str,
+    reference: md.Trajectory | str | Path | None,
+) -> None:
+    """
+    Superpose `sliced` onto `reference`, or to its own frame 0
+    `indices are the atoms of the trajectory that `sliced` holds, the
+    same `selection` is applied to the reference so the two align atom for atom
+    """
+    if reference is None:
+        sliced.superpose(sliced, 0)
+        return
+
+    if isinstance(reference, (str, Path)):
+        reference = md.load(str(reference))
+    ref_idx = validate_selection(reference.topology, selection)
+    if ref_idx.size != indices.size:
+        raise ValueError(f"Reference has {ref_idx.size} atoms matching '{selection}' but the trajectory has {indices.size}. The selections must match atom for atom.")
+    sliced.superpose(reference.atom_slice(ref_idx), 0)
 
 def ca_coordinates(
     traj: md.Trajectory,
     *,
-    selection: str = "name CA"
+    selection: str = "name CA",
+    reference: md.Trajectory | str | Path | None = None
 ) -> tuple[np.ndarray, list[str]]:
     """
-    Extracts C-alpha coordinates as a flat feature matrix (n_frames, n_CA * 3) in Angstrom.
-    Superposition onto frame 0 is applied automatically.
-    If `selection` is declared, only the C-alpha distances within `selection` will be computed.
-    Returns (features, labels) where labels are like 'x_CA_5', 'y_CA_5', 'z_CA_5'
+    C-alpha coordinates as a flat feature matrix (n_frames, n_CA * 3) in Angstrom.
+
+    Frames are superposed before extraction. Without `reference` the target is
+    frame 0 of `traj`, so the features are meaningful only within that
+    trajectory. Coordinates from two trajectories aligned to their own first
+    frames are not comparable. `Ensemble.compute_features` supplies a shared
+    reference automatically.
+
+    Parameters
+    ----------
+    selection: atom selection, intersected with 'name CA'
+    reference: single-frame structure, or a path to one, defining the common
+        alignment frame
+
+    Returns
+    -------
+    (features, labels) with labels like 'x_CA_5', 'y_CA_5', 'z_CA_5'
     """
-    if selection != "name CA":
-        ca_indices = validate_selection(traj.topology, f"({selection}) and name CA")
-    else:
-        ca_indices = validate_selection(traj.topology, selection)
+
+    sel = f"({selection}) and name CA" if selection != "name CA" else selection
+    ca_indices = validate_selection(traj.topology, sel)
 
     # slice firts, then superpose to avoid changing the caller's trajectory
     sliced = traj.atom_slice(ca_indices)
-    sliced.superpose(sliced, 0)
+    _superpose(sliced, ca_indices, sel, reference)
     coords = sliced.xyz * 10 # nm to Angstrom
 
     labels = []
@@ -178,13 +214,19 @@ def custom(
     traj: md.Trajectory,
     *,
     selection: str,
+    reference: md.Trajectory | str | Path | None = None,
 ) -> tuple[np.ndarray, list[str]]:
-    """Coordinates of a custom atom selection. Returns (features, labels)."""
+    """
+    Cartesian coordinates of a custom atom selection, in Angstrom.
+
+    Frames are superposed on `reference`, or on frame 0 of `traj` when none is
+    given. See `ca_coordinates` for why a shared reference matters across trajectories.
+    """
     indices = validate_selection(traj.topology, selection)
 
     sliced = traj.atom_slice(indices)
-    sliced.superpose(sliced, 0)
-    coords = sliced.xyz *10
+    _superpose(sliced, indices, selection, reference)
+    coords = sliced.xyz * 10
     
     labels = []
     for i in indices:

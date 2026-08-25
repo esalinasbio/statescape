@@ -151,6 +151,14 @@ class Ensemble:
         if format not in ['colvar', 'npy']:
             raise ValueError(f"`format` must be 'colvar' or npy', got {format!r}")
 
+        ## Coordinate features are only comparable between sims when every trajectory
+        # is aligned to the same structure (rotation-variant). Default to frame 0 of
+        # the first trajectory if the user does not supply one
+
+        if method in ('ca_coordinates', 'custom') and kwargs.get('reference') is None:
+            first_traj, first_top = self._pairs[0]
+            kwargs['reference'] = md.load_frame(str(first_traj),0, top=str(first_top))
+
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         ext = "npy" if format == "npy" else "dat"
@@ -209,7 +217,10 @@ class Ensemble:
             "format": format,
             "n_trajectories": len(self),
             "n_features": len(labels) if labels else None,
-            "kwargs": {k: str(v) for k, v in kwargs.items()},
+            "kwargs": {k: str(v) for k, v in kwargs.items() if k != "reference"},
+            "reference": (
+                str(self._pairs[0][0]) + " frame 0" if method in ("ca_coordinates", "custom") else None
+            ),
             "trajectories": [
                 {
                     'name': self._names[i],
@@ -540,7 +551,7 @@ class Ensemble:
 
     def __getitem__(self, idx: int) -> md.Trajectory:
         traj, top = self._pairs[idx]
-        return md.load(str(traj), str(top))
+        return md.load(str(traj), top=str(top))
 
     def __repr__(self) -> str:
         return (f"Ensemble(n_trajectories={len(self)}, names = [{self._names[0]!r}, ..., {self._names[-1]!r}])")
