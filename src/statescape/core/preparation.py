@@ -24,34 +24,27 @@ def _fix_frame(
     except ImportError as e:
         raise ImportError("pdbfixer is required. Please install with `pip install pdbfixer`.") from e
 
-    with tempfile.NamedTemporaryFile(suffix=".pdb", mode="w", delete=False) as tmp_in:
-        frame.save_pdb(tmp_in.name)
-        tmp_in_path = tmp_in.name
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        raw, fixed = tmp / 'in.pdb', tmp / 'out.pdb'
+        frame.save_pdb(raw)
 
-    fixer = PDBFixer(filename=tmp_in_path)
-    if fix_missing_residues:
-        fixer.findMissingResidues()
-    if replace_nonstandard:
-        fixer.findNonstandardResidues()
-        fixer.replaceNonstandardResidues()
-    if remove_heterogens:
-        fixer.removeHeterogens(keepWater=keep_water)
-    if fix_missing_atoms:
-        fixer.findMissingAtoms()
-        fixer.addMissingAtoms()
-    fixer.addMissingHydrogens(ph)
+        fixer = PDBFixer(filename=str(raw))
+        if fix_missing_residues:
+            fixer.findMissingResidues()
+        if replace_nonstandard:
+            fixer.findNonstandardResidues()
+            fixer.replaceNonstandardResidues()
+        if remove_heterogens:
+            fixer.removeHeterogens(keepWater=keep_water)
+        if fix_missing_atoms:
+            fixer.findMissingAtoms()
+            fixer.addMissingAtoms()
+        fixer.addMissingHydrogens(ph)
 
-    with tempfile.NamedTemporaryFile(suffix=".pdb", mode="w", delete=False) as tmp_out:
-        PDBFile.writeFile(fixer.topology, fixer.positions, tmp_out)
-        tmp_out_path = tmp_out.name
-
-    try:
-        fixed = md.load_pdb(tmp_out_path)
-    finally:
-        Path(tmp_in_path).unlink(missing_ok=True)
-        Path(tmp_out_path).unlink(missing_ok=True)
-
-    return fixed
+        with open(fixed, "w") as fh:
+            PDBFile.writeFile(fixer.topology, fixer.positions, fh)
+        return md.load_pdb(fixed)
 
 def add_hydrogens(
     traj: md.Trajectory,
