@@ -53,5 +53,56 @@ def umap(
     coords = model.fit_transform(X_scaled)
     return ReductionResult(coords=coords, explained_variance=None, model=model, scaler=scaler)
 
-#### TO DO #####
-# Implement tICA
+def tica(
+    blocks: list[np.ndarray],
+    n_components: int = 2,
+    *,
+    lag: int,
+    scale: bool = False,
+    **tica_kwargs
+) -> ReductionResult:
+    """
+    Time-lagged independent component analysis over a list of trajectories' features.
+    Each block is treated as an independent trajectory.
+
+    Parameters
+    ----------
+    blocks: one (n_frames, n_features) array per trajectory
+    n_components: number of independent components to keep
+    lag: lag time in frames
+    scale: standarize features to unit variance before fitting. Off by default,
+        tICA is already scale invariant through its own covariance normalization,
+        and scaling can amplify near constant features
+    **tica_kwargs: forwarded to `deeptime.decomposition.TICA`
+
+    Returns
+    -------
+    ReductionResult: `.coords` is the projection of every block, concatenated.
+        `.model` is the fitted deeptime model. `.model.timescales(lagtime=lag)` gives
+        the implied timescales in frames.
+    """
+    try:
+        from deeptime.decomposition import TICA
+    except ImportError as e:
+        raise ImportError(f'deeptime is requieres. Install with `pip install deeptime`.')
+
+    if not  blocks:
+        raise ValueError('No features given')
+    if lag < 1:
+        raise ValueError(f"lag must be >= 1, got {lag}.")
+
+    short = [(i, len(b)) for i, b in enumerate(blocks) if len(b) <= lag]
+    if short:
+        raise ValueError(f"lag={lag} is greater than {len(short)} of {len(blocks)} trajectories.")
+
+    scaler = None
+    data = blocks
+    if scale:
+        scaler = StandardScaler()
+        scaler.fit(np.vstack(blocks))
+        data = [scaler.transform(b) for b in blocks]
+
+    model = TICA(lagtime=lag, dim=n_components, **tica_kwargs).fit(data).fetch_model()
+    coords = np.vstack([model.transform(b) for b in data])
+
+    return ReductionResult(coords=coords, explained_variance=None, model=model, scaler=scaler)

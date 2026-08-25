@@ -375,6 +375,7 @@ class Ensemble:
         *,
         method: str = 'pca',
         n_components: int = 10,
+        lag: int | None = None,
         stride: int = 1,
         **kwargs
     ) -> tuple[ReductionResult, np.ndarray]:
@@ -386,8 +387,10 @@ class Ensemble:
         Parameters
         ----------
         features_dir: directory written by `compute_features`
-        method: 'pca' or 'umap' (default: pca)
+        method: 'pca', 'umap' or 'tica' (default: pca)
         n_components: number of output dimensions
+        lag: lag time for tICA, in (strided) frames. Required for `tica`.
+            On frames saved every 10 ps, lag=10 means 100 ps.
         stride: load every `stride`-th frame of each file
         **kwargs: passed to the reducer
 
@@ -395,14 +398,26 @@ class Ensemble:
         -------
         result: ReductionResult with `.coords` with shape (n_rows, n_components)
         index: (replica, frame) pair for every row of `result.coords`
+
+        Notes
+        ------
+        PCA and UMAP ignore frame order, so simulations are stacked into one matrix.
+        tICA recives them as independent trajectories, so no lagged pairs crosses a boundary
+        between simulations.
         """
+        if method == 'tica' and lag is None:
+            raise ValueError("`lag` is required for tICA.")
+        
         blocks, _ = self._load_feature_blocks(features_dir, stride=stride)
         index = self._row_index(blocks)
 
         dim_map = {
             "pca": lambda: dimensionality.pca(np.vstack(blocks), n_components=n_components, **kwargs),
-            "umap": lambda: dimensionality.umap(np.vstack(blocks), n_components=n_components, **kwargs)
+            "umap": lambda: dimensionality.umap(np.vstack(blocks), n_components=n_components, **kwargs),
+            "tica": lambda: dimensionality.tica(blocks, n_components=n_components, lag=lag, **kwargs)
         }
+        if method not in dim_map:
+            raise ValueError(f"Unknown dimensionality reduction: {method!r}. Available: {list(dim_map.keys())}")
 
         return dim_map[method](), index
 
@@ -487,7 +502,7 @@ class Ensemble:
             traj_path, top_path = self._pairs[sim]
             traj = md.load(str(traj_path), top=str(top_path))
             for cid, frame in by_sim[sim]:
-                frame_idx = f * stride
+                frame_idx = frame * stride
                 if frame_idx >= traj.n_frames:
                     raise IndexError(f"Cluster {cid:}: frame {frame_idx} is out of bonds for {traj_path} ({traj.n_frames} total frames).")
                 out = output_dir / f'{prefix}_{cid:02d}_{self._names[sim]}_f{frame_idx}.pdb'
