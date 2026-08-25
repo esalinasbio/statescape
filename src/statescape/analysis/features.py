@@ -184,7 +184,7 @@ def custom(
 
     sliced = traj.atom_slice(indices)
     sliced.superpose(sliced, 0)
-    coords = sliced.xyc *10
+    coords = sliced.xyz *10
     
     labels = []
     for i in indices:

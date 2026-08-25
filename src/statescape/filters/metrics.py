@@ -64,7 +64,7 @@ def tmscore(
 
     # frame
     frame_ca = validate_selection(traj.topology, "protein and name CA")
-    frame_seq = get_sequence(traj.topology)
+    frame_seq = get_sequence(traj)
     if len(frame_seq) != frame_ca.size:
         raise ValueError(f"Got {frame_ca.size} CA atoms but {len(frame_seq)} residues.")
 

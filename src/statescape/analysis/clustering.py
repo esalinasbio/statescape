@@ -24,7 +24,6 @@ def kmeans(
     random_state: int | None = None
 ) -> tuple[np.ndarray, dict[int, int]]:
     """K-means++ clustering over all columns of `coords`"""
-    #data = coords[:, :n_components] # shape (n_frames, n_components)
     labels = KMeans(n_clusters=n_clusters, init="k-means++", n_init=20, random_state=random_state).fit_predict(coords)
     return labels, _representatives(coords, labels)
 
@@ -36,7 +35,6 @@ def gmm(
 ) -> tuple[np.ndarray, dict[int, int]]:
     """Gaussian Mixture Model clustering over all columns of `coords`"""
     from sklearn.mixture import GaussianMixture
-    #data = coords[:, :n_components]
     labels = GaussianMixture(n_components=n_clusters, n_init=10, random_state=random_state).fit_predict(coords)
     return labels, _representatives(coords, labels)
 

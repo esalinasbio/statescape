@@ -43,6 +43,7 @@ def umap(
     except ImportError as e:
         raise ImportError("umap-learn is required. Install with `pip install umap-learn`.") from e
 
+    scaler = None
     X_scaled = X
     if scale:
         scaler = StandardScaler()

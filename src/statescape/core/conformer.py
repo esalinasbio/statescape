@@ -49,6 +49,7 @@ class ConformerSet:
             else:
                 raise ValueError("A topology file is required when loading a trajectory file.")
             self._names = [f"frame_{i}" for i in range(self._traj.n_frames)]
+            self._frame_sources = None
         else:
             if topology:
                 self._traj = md.load(self._source, top=topology)
@@ -57,8 +58,15 @@ class ConformerSet:
             
             if isinstance(self._source, list):
                 self._names = [Path(s).stem for s in self._source]
+                self._frame_sources = [Path(s) for s in self._source]
             else:
                 self._names = [f"{Path(self._source).stem}_{i}" for i in range(self._traj.n_frames)]
+                self._frame_sources = [Path(self._source)] * self._traj.n_frames
+
+            if len(self._names) != self._traj.n_frames:
+                raise ValueError(
+                    f"Loaded {self._traj.n_frames} frames from {len(self._names)} files. ConformerSet expects one conformer per file when a file list is used "
+                )
         self._name_index = {name: i for i, name in enumerate(self._names)}
 
         # reference and topology
@@ -89,7 +97,8 @@ class ConformerSet:
         traj: md.Trajectory,
         *,
         ref:  str | Path | md.Trajectory | None = None,
-        names: Sequence[str] | None = None
+        names: Sequence[str] | None = None,
+        sources: Sequence[str | Path] | None = None
     ) -> ConformerSet:
         obj = cls(trajectory=traj, reference=ref)
         if names is not None:
@@ -97,6 +106,10 @@ class ConformerSet:
                 raise ValueError(f"Got {len(names)} names for {traj.n_frames} frames")
             obj._names = list(names)
             obj._name_index = {n: i for i, n in enumerate(obj._names)}
+        if sources is not None:
+            if len(sources) != traj.n_frames:
+                raise ValueError(f"Got {len(sources)} sources for {traj.n_frames} frames.")
+            obj._frame_sources = [Path(s) for s in sources]
         return obj
 
     @classmethod
@@ -112,14 +125,18 @@ class ConformerSet:
         merged = md.join([s.trajectory for s in sets])
         names = [f"{i}_{n}" for i, s in enumerate(sets) for n in s.names]
         ref = reference if reference is not None else sets[0].reference
-        return cls._from_traj(merged, ref=ref, names=names)
+        sources = (
+            [p for s in sets for p in s.sources] if all(s.sources is not None for s in sets) else None
+        )
+        return cls._from_traj(merged, ref=ref, names=names, sources=sources)
 
     # filtering and manipulation
 
     def subset(self, idx: Sequence[int]) -> ConformerSet:
         """Return a new set containing the requested frame indices."""
         idx = np.asarray(idx, dtype=int)
-        return self._from_traj(self._traj[idx], ref=self._ref, names=[self._names[i] for i in idx])
+        return self._from_traj(self._traj[idx], ref=self._ref, names=[self._names[i] for i in idx], 
+                               sources=[self._frame_sources[i] for i in idx] if self._frame_sources else None)
     
     def filter(self, mask: Sequence[bool]) -> ConformerSet:
         """Return a new set containing frames where the mask is True."""
@@ -289,7 +306,7 @@ class ConformerSet:
             remove_heterogens=remove_heterogens,
             keep_water=keep_water,
         )
-        return self._from_traj(fixed, ref=self._ref, names=self._names)
+        return self._from_traj(fixed, ref=self._ref, names=self._names, sources=self._frame_sources)
 
 
     def save_cluster_representatives(
@@ -394,11 +411,9 @@ class ConformerSet:
     @property
     def sources(self) -> list[Path] | None:
         """Source files, or None if it was built in-memory"""
-        if self._source is None:
+        if self._frame_sources is None:
             return None
-        if isinstance(self._source, list):
-            return [Path(s) for s in self._source]
-        return [Path(self._source)]
+        return list(self._frame_sources)
 
     def __len__(self) -> int:
         """Return the number of conformations inside ConformerSet."""
@@ -415,11 +430,18 @@ class ConformerSet:
             raise KeyError(f"Structure '{key}' not found.")
 
     def __repr__(self) -> str:
+        if self._input is not None:
+            source = _source_repr(self._input)
+        elif self._frame_sources:
+            n = len({str(p) for p in self._frame_sources})
+            source = f"derived from {n} file{'s' if n != 1 else ''}"
+        else:
+            source = 'in memory'
         return (
             f"ConformerSet("
             f"n_frames={self._traj.n_frames}, "
             f"n_atoms={self._traj.n_atoms}, "
-            f"source={_source_repr(self._input)}"
+            f"source={source}"
             f")"
         )
 
