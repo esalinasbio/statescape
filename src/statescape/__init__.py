@@ -1,2 +1,12 @@
-def main() -> None:
-    print("Hello from statescape!")
+"""StateScape: AI-augmented conformational sampling of proteins"""
+
+from importlib.metadata import PackageNotFoundError, version
+
+from .core import ConformerSet, Ensemble
+
+try:
+    __version__ = version("statescape")
+except PackageNotFoundError:  # running from a source tree without an install
+    __version__ = "0.0.0+unknown"
+
+__all__ = ["ConformerSet", "Ensemble", "__version__"]
