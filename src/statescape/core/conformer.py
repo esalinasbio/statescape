@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import mdtraj as md
 import numpy as np
+import yaml
 
 from glob import glob
 from pathlib import Path
 from natsort import natsorted
 from typing import Iterable, Sequence
+from datetime import datetime, timezone
 
 from .preparation import add_hydrogens, _fix_frame
 from statescape.util import save_pdb, save_colvar
@@ -227,7 +229,7 @@ class ConformerSet:
         method : 'kmeans' | 'gmm' | 'regular_space'
         n_clusters : number of clusters (kmeans and gmm only)
         radius : radius threshold (regular_space only)
-        n_components : how many dimensions of latent_coords to use
+        n_components : how many columns of latent_coords to use. For UMAP, the width must be set at reduction time.
         latent_coords : any (n_frames, n_features) array. If None, PCA over C-alpha coordinates is computed automatically.
         """
         if latent_coords is None:
@@ -240,10 +242,13 @@ class ConformerSet:
         if latent_coords.shape[1] < n_components:
             raise ValueError(f'latent_coords has {latent_coords.shape[1]} columns, n_components={n_components} requested')
 
+        # use oonly n_components for the clustering
+        data = latent_coords[:, :n_components]
+
         cluster_map = {
-            "kmeans": lambda: clustering.kmeans(latent_coords, n_clusters=n_clusters, **kwargs),
-            "gmm": lambda: clustering.gmm(latent_coords, n_clusters=n_clusters, **kwargs),
-            "regular_space": lambda: clustering.regular_space(latent_coords, radius, **kwargs)
+            "kmeans": lambda: clustering.kmeans(data, n_clusters=n_clusters, **kwargs),
+            "gmm": lambda: clustering.gmm(data, n_clusters=n_clusters, **kwargs),
+            "regular_space": lambda: clustering.regular_space(data, radius, **kwargs)
         }
         if method not in cluster_map:
             raise ValueError(f"Unknown cluster method: {method!r}. Available: {list(cluster_map.keys())}")
