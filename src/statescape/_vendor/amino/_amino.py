@@ -116,11 +116,11 @@ class DistanceMatrix:
         pairs = list(combinations_with_replacement(range(n), 2))
         with mp.Pool(processes=mp.cpu_count()) as p:
             if verbose:
-                result = p.starmap(self._compute_pair, pairs)
-            else:
                 result = p.starmap(self._compute_pair, 
                                 tqdm(pairs, desc="Computing distances", total=n*(n+1)//2)
                 )
+            else:
+                result = p.starmap(self._compute_pair, pairs)
 
         for (i, j), r in zip(pairs, result):
             idx = frozenset((self.ops[i].name, self.ops[j].name))

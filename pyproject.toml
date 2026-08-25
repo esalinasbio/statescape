@@ -1,7 +1,7 @@
 [project]
 name = "statescape"
 version = "0.1.0"
-description = "Add your description here"
+description = "StateScape: Conformational Sampling Pipeline for Protein Dynamics"
 readme = "README.md"
 authors = [
     { name = "Emiliano Salinas", email = "esalinasbio@gmail.com" },
@@ -33,3 +33,6 @@ build-backend = "uv_build"
 dev = [
     "ipykernel>=7.2.0",
 ]
+
+[tool.statescape.vendored]
+amino = { source = "https://github.com/tiwarylab/af2rave", commit = "794c6a2", vendored = "2026-05-27", license = "MIT" }

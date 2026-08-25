@@ -25,4 +25,4 @@ Copyright 2024 Tiwary Lab. Licensed under the MIT License (see [LICENSE](amino/L
 ### Modifications
 
 - Removed `explanation()` and `explain()` from `wrapper.py`.
-
+- Fixed inverted `verbose` branch in `DistanceMatrix.initialize_distances` (`_amino.py`): the progress bar was shown when `verbose=False`.
