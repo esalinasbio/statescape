@@ -35,8 +35,6 @@ pip install -e .
 
 5. **CV learning** — multiple dimensionality reduction methods: tICA, deep-tICA, autoencoders, VAEs, time-lagged autoencoders and tVAEs. Learn data-driven collective variables from MD trajectories.
 
-6. **MSM construction** — build Markov State Models in the learned latent space or any physically motivated CV space. Identify metastable states, compute free energy landscapes, and extract transition kinetics.
-
 Each module can be used independently if the inputs are compatible.
 
 ---
