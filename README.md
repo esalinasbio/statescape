@@ -42,7 +42,7 @@ Each module can be used independently if the inputs are compatible.
 
 ## TODO
 
-- Complete `simulation/` module integration (AMBER/OpenMM pipeline)
+- Complete `simulation/` module integration (~AMBER~/OpenMM pipeline)
 - Complete `learning/` module (tICA, deep-tICA, AE, VAE, tVAE, SPIB)
 - Multi-source featurization
 - Metadynamics/OPES CV interface (use learned CVs to drive enhanced sampling)
