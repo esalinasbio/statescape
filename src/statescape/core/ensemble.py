@@ -159,7 +159,7 @@ class Ensemble:
             first_traj, first_top = self._pairs[0]
             kwargs['reference'] = md.load_frame(str(first_traj),0, top=str(first_top))
 
-        output_dir = Path(output_dir)
+        output_dir = Path(output_dir).resolve()
         output_dir.mkdir(parents=True, exist_ok=True)
         ext = "npy" if format == "npy" else "dat"
         feat_paths, n_frames = [],[]
@@ -337,7 +337,7 @@ class Ensemble:
         """
         Slice selected columns (`selected_labels`) from each feature file  and save.
         """
-        output_dir = Path(output_dir)
+        output_dir = Path(output_dir).resolve()
         output_dir.mkdir(parents=True, exist_ok=True)
         ext = "npy" if format == "npy" else "dat"
         col_idx = [labels.index(i) for i in selected_labels]
